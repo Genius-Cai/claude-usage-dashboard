@@ -31,6 +31,25 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { UsageByPeriod } from '@/types';
 import { useSettingsStore } from '@/stores/settings-store';
 import { cn } from '@/lib/utils';
+import { useTheme } from 'next-themes';
+
+// Chart colors for light and dark modes
+const CHART_COLORS = {
+  light: {
+    primary: '#8B5CF6',      // Purple
+    stroke: '#7C3AED',
+    fillOpacity: 0.4,
+    gridColor: '#E5E7EB',
+    textColor: '#6B7280',
+  },
+  dark: {
+    primary: '#A78BFA',      // Lighter purple for dark mode
+    stroke: '#8B5CF6',
+    fillOpacity: 0.6,        // Higher opacity for visibility
+    gridColor: '#374151',
+    textColor: '#9CA3AF',
+  },
+};
 
 interface UsageTrendChartProps {
   data: UsageByPeriod[];
@@ -110,8 +129,18 @@ export function UsageTrendChart({
   showControls = true,
 }: UsageTrendChartProps) {
   const { formatCurrency } = useSettingsStore();
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = React.useState(false);
   const [metric, setMetric] = React.useState<MetricType>('cost');
   const [chartType, setChartType] = React.useState<ChartType>('area');
+
+  // Ensure we're mounted before accessing theme
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Get colors based on theme
+  const colors = mounted && resolvedTheme === 'dark' ? CHART_COLORS.dark : CHART_COLORS.light;
 
   // Transform data based on selected metric
   const chartData = React.useMemo(() => {
@@ -183,29 +212,33 @@ export function UsageTrendChart({
           <ResponsiveContainer width="100%" height="100%">
             <Chart data={chartData}>
               <defs>
-                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                <linearGradient id="colorValueLight" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.5} />
+                  <stop offset="50%" stopColor="#8B5CF6" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.05} />
+                </linearGradient>
+                <linearGradient id="colorValueDark" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#A78BFA" stopOpacity={0.7} />
+                  <stop offset="50%" stopColor="#8B5CF6" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#7C3AED" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
-                className="stroke-muted"
+                stroke={colors.gridColor}
                 vertical={false}
               />
               <XAxis
                 dataKey="period"
-                tick={{ fontSize: 12 }}
+                tick={{ fontSize: 12, fill: colors.textColor }}
                 tickLine={false}
                 axisLine={false}
-                className="text-muted-foreground"
               />
               <YAxis
-                tick={{ fontSize: 12 }}
+                tick={{ fontSize: 12, fill: colors.textColor }}
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={(value) => formatAxisValue(value, metric)}
-                className="text-muted-foreground"
                 width={60}
               />
               <Tooltip
@@ -227,9 +260,9 @@ export function UsageTrendChart({
                       ? 'Tokens'
                       : 'Requests'
                   }
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2}
-                  fill="url(#colorValue)"
+                  stroke={colors.stroke}
+                  strokeWidth={2.5}
+                  fill={mounted && resolvedTheme === 'dark' ? 'url(#colorValueDark)' : 'url(#colorValueLight)'}
                 />
               ) : (
                 <Line
@@ -242,10 +275,10 @@ export function UsageTrendChart({
                       ? 'Tokens'
                       : 'Requests'
                   }
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2}
+                  stroke={colors.stroke}
+                  strokeWidth={2.5}
                   dot={false}
-                  activeDot={{ r: 4, strokeWidth: 0 }}
+                  activeDot={{ r: 5, strokeWidth: 0, fill: colors.primary }}
                 />
               )}
             </Chart>
@@ -270,6 +303,16 @@ export function TokenComparisonChart({
   isLoading = false,
   className,
 }: TokenComparisonChartProps) {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isDark = mounted && resolvedTheme === 'dark';
+  const colors = isDark ? CHART_COLORS.dark : CHART_COLORS.light;
+
   const chartData = React.useMemo(() => {
     return data.map((item) => ({
       period: item.period,
@@ -303,28 +346,36 @@ export function TokenComparisonChart({
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData}>
               <defs>
-                <linearGradient id="colorInput" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                <linearGradient id="colorInputLight" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.5} />
+                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.05} />
                 </linearGradient>
-                <linearGradient id="colorOutput" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                <linearGradient id="colorOutputLight" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.5} />
+                  <stop offset="95%" stopColor="#10B981" stopOpacity={0.05} />
+                </linearGradient>
+                <linearGradient id="colorInputDark" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#60A5FA" stopOpacity={0.7} />
+                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1} />
+                </linearGradient>
+                <linearGradient id="colorOutputDark" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#34D399" stopOpacity={0.7} />
+                  <stop offset="95%" stopColor="#10B981" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
-                className="stroke-muted"
+                stroke={colors.gridColor}
                 vertical={false}
               />
               <XAxis
                 dataKey="period"
-                tick={{ fontSize: 12 }}
+                tick={{ fontSize: 12, fill: colors.textColor }}
                 tickLine={false}
                 axisLine={false}
               />
               <YAxis
-                tick={{ fontSize: 12 }}
+                tick={{ fontSize: 12, fill: colors.textColor }}
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={(value) => formatAxisValue(value, 'tokens')}
@@ -336,17 +387,17 @@ export function TokenComparisonChart({
                 type="monotone"
                 dataKey="input"
                 name="Input Tokens"
-                stroke="#3B82F6"
-                strokeWidth={2}
-                fill="url(#colorInput)"
+                stroke={isDark ? '#60A5FA' : '#3B82F6'}
+                strokeWidth={2.5}
+                fill={isDark ? 'url(#colorInputDark)' : 'url(#colorInputLight)'}
               />
               <Area
                 type="monotone"
                 dataKey="output"
                 name="Output Tokens"
-                stroke="#10B981"
-                strokeWidth={2}
-                fill="url(#colorOutput)"
+                stroke={isDark ? '#34D399' : '#10B981'}
+                strokeWidth={2.5}
+                fill={isDark ? 'url(#colorOutputDark)' : 'url(#colorOutputLight)'}
               />
             </AreaChart>
           </ResponsiveContainer>
