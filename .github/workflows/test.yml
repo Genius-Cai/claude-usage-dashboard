@@ -29,18 +29,8 @@ jobs:
 
       - name: Run tests
         run: npm run test:run
-
-      - name: Run tests with coverage
-        run: npm run test:coverage
-        continue-on-error: true
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: frontend-coverage
-          path: coverage/
-          retention-days: 7
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
 
   test-backend:
     name: Backend Tests
