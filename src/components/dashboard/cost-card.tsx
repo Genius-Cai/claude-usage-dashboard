@@ -7,7 +7,7 @@
 
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { DollarSign, TrendingUp, TrendingDown, ArrowUpRight } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -56,7 +56,7 @@ export function CostCard({
 
   if (isLoading) {
     return (
-      <Card className={cn('overflow-hidden', className)}>
+      <Card className={cn('overflow-hidden h-full', className)}>
         <CardHeader className="pb-2">
           <Skeleton className="h-4 w-20" />
         </CardHeader>
@@ -74,7 +74,7 @@ export function CostCard({
   return (
     <Card
       className={cn(
-        'overflow-hidden transition-all duration-300',
+        'overflow-hidden h-full transition-all duration-300',
         isHovered && 'shadow-lg',
         className
       )}
@@ -143,14 +143,6 @@ export function CostCard({
           </div>
         )}
 
-        <motion.div
-          initial={false}
-          animate={{ opacity: isHovered ? 1 : 0.7 }}
-          className="flex items-center gap-1 text-xs text-muted-foreground"
-        >
-          <ArrowUpRight className="h-3 w-3" />
-          <span>Click to toggle USD/CNY</span>
-        </motion.div>
       </CardContent>
     </Card>
   );

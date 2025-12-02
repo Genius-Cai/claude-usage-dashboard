@@ -1,10 +1,40 @@
-# Claude Usage Dashboard - Project Context
-
-## Overview
+# Claude Usage Dashboard
 
 A modern web dashboard for monitoring Claude Code usage, built with Next.js 16 (App Router) and FastAPI. Provides real-time usage tracking, cost analysis, and visual statistics for Claude AI API consumption.
 
 **GitHub**: https://github.com/Genius-Cai/claude-usage-dashboard
+
+## Quick Reference
+
+### Essential Commands
+```bash
+# Frontend
+npm run dev          # Start dev server (localhost:3000)
+npm run build        # Production build
+npm run lint         # ESLint check
+npm run test         # Run tests in watch mode
+npm run test:run     # Run tests once
+npm run test:coverage # Run with coverage
+
+# Backend (from /backend)
+pip install -e .     # Install with dependencies
+uvicorn app.main:app --reload --port 8000
+cd backend && pytest  # Run backend tests
+
+# Both services
+make dev             # Start both servers
+make docker-dev      # Docker development
+```
+
+### API Endpoints Quick Reference
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/usage/realtime` | Real-time usage with session info |
+| `GET /api/usage/plan-usage?plan=max20` | Plan usage vs limits |
+| `GET /api/usage/daily?date=YYYY-MM-DD` | Daily statistics |
+| `GET /api/stats/models?days=30` | Usage by model |
+| `WS /ws/realtime` | WebSocket live updates |
+| `GET /health` | Health check |
 
 ## Current Status (Dec 2024)
 
@@ -14,8 +44,15 @@ A modern web dashboard for monitoring Claude Code usage, built with Next.js 16 (
 - **Session Timer**: Countdown with progress bar using plan-usage API
 - **Statistics Page**: Historical data with date range selection and CSV export
 - **Settings Page**: Plan, currency, timezone, theme, notifications configuration
-- **WebSocket**: Real-time updates with 10-second broadcast interval
+- **WebSocket**: Real-time updates with exponential backoff reconnection
 - **PWA**: Installable on iOS/Android
+- **Performance**: Code splitting, conditional data fetching, cache warming
+
+### Recent Optimizations (Dec 2024)
+- Tab components loaded dynamically with `next/dynamic` (code splitting)
+- Data fetching only occurs when tabs are active
+- Backend cache warming at startup for faster first requests
+- WebSocket exponential backoff reconnection (1s → 2s → 4s → ... → 30s cap)
 
 ### Known Issues
 - Sessions page could benefit from performance optimization
@@ -91,6 +128,21 @@ claude-usage-dashboard/
 ├── Makefile                      # Build automation
 ├── STYLE.md                      # Design system reference
 └── README.md                     # Project documentation
+
+# Test directories
+src/__tests__/
+├── components/                   # Component tests
+│   ├── stats-card.test.tsx
+│   └── plan-usage-card.test.tsx
+└── hooks/                        # Hook tests
+    ├── use-websocket.test.tsx
+    └── use-usage-data.test.tsx
+
+backend/tests/
+├── unit/
+│   └── test_data_service.py      # Service unit tests
+└── integration/
+    └── test_api_endpoints.py     # API integration tests
 ```
 
 ## API Endpoints
@@ -175,10 +227,16 @@ PLAN_CONFIGS = {
 npm run dev          # Start dev server (localhost:3000)
 npm run build        # Production build
 npm run lint         # ESLint
+npm run test         # Run tests in watch mode (Vitest)
+npm run test:run     # Run tests once
+npm run test:coverage # Run with coverage report
 
 # Backend (from /backend)
 pip install -e .     # Install with claude-monitor
 uvicorn app.main:app --reload --port 8000
+pytest               # Run all backend tests
+pytest -v            # Verbose output
+pytest tests/unit/   # Run only unit tests
 
 # Both
 make dev             # Start both servers
@@ -242,3 +300,38 @@ DEBUG=False
 2. Check claude-monitor CLI: `claude-monitor status`
 3. Check backend logs: `make logs-api`
 4. Verify JSONL files exist in `~/.claude/projects/`
+
+## Architecture Patterns
+
+### Frontend Code Splitting (Tab Components)
+Dashboard tabs are loaded dynamically using `next/dynamic`:
+```tsx
+// src/app/page.tsx
+const OverviewTab = dynamic(
+  () => import('./tabs/overview-tab').then((mod) => ({ default: mod.OverviewTab })),
+  { loading: () => <TabLoadingSkeleton />, ssr: false }
+);
+```
+
+### WebSocket Exponential Backoff
+Reconnection uses exponential backoff with jitter:
+```typescript
+// src/hooks/use-websocket.ts
+const INITIAL_RECONNECT_DELAY = 1000;  // 1 second
+const MAX_RECONNECT_DELAY = 30000;     // 30 seconds cap
+// Backoff sequence: 1s → 2s → 4s → 8s → 16s → 30s (capped)
+// Jitter: ±10% to prevent thundering herd
+```
+
+### Backend Cache Warming
+Cache is pre-warmed at startup for faster first requests:
+```python
+# backend/app/main.py lifespan
+if settings.is_data_path_valid():
+    warm_cache()  # Pre-loads data into 10-second TTL cache
+```
+
+### Testing Stack
+- **Frontend**: Vitest + @testing-library/react
+- **Backend**: pytest + pytest-asyncio
+- Test files follow pattern: `*.test.tsx` (frontend), `test_*.py` (backend)

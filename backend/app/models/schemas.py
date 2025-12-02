@@ -303,7 +303,7 @@ class UsageVsLimit(BaseModel):
 
     current: float = Field(description="Current usage value")
     limit: float = Field(description="Plan limit value")
-    percentage: float = Field(ge=0.0, le=100.0, description="Usage percentage")
+    percentage: float = Field(ge=0.0, description="Usage percentage (can exceed 100% for overage)")
     formatted_current: str = Field(description="Formatted current value")
     formatted_limit: str = Field(description="Formatted limit value")
 
