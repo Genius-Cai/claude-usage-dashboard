@@ -21,9 +21,25 @@ import type {
 // ============================================================================
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
-const RECONNECT_INTERVAL = 5000; // 5 seconds
-const MAX_RECONNECT_ATTEMPTS = 5;
+const INITIAL_RECONNECT_DELAY = 1000; // 1 second
+const MAX_RECONNECT_DELAY = 30000; // 30 seconds max
+const MAX_RECONNECT_ATTEMPTS = 10; // Increased from 5 due to backoff
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+
+/**
+ * Calculate exponential backoff delay with jitter
+ * @param attempt - The current attempt number (0-indexed)
+ * @returns Delay in milliseconds (minimum 100ms)
+ */
+function getBackoffDelay(attempt: number): number {
+  // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
+  const exponentialDelay = INITIAL_RECONNECT_DELAY * Math.pow(2, attempt);
+  const cappedDelay = Math.min(exponentialDelay, MAX_RECONNECT_DELAY);
+  // Add jitter (±10%) to prevent thundering herd
+  const jitter = cappedDelay * 0.1 * (Math.random() * 2 - 1);
+  // Ensure minimum 100ms delay to prevent edge cases
+  return Math.max(100, Math.floor(cappedDelay + jitter));
+}
 
 // ============================================================================
 // Types
@@ -84,6 +100,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const reconnectTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const connectRef = React.useRef<() => void>(() => {});
   const reconnectAttemptsRef = React.useRef<number>(0);
+  const intentionalDisconnectRef = React.useRef<boolean>(false);
 
   const [state, setState] = React.useState<WebSocketState>({
     status: 'disconnected',
@@ -184,6 +201,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       return;
     }
 
+    // Reset intentional disconnect flag when connecting
+    intentionalDisconnectRef.current = false;
     cleanup();
     setState((prev) => ({ ...prev, status: 'connecting', error: null }));
 
@@ -205,8 +224,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         setState((prev) => ({ ...prev, status: 'disconnected' }));
         onDisconnect?.();
 
-        // Attempt reconnection using ref to get current value
-        if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+        // Only attempt reconnection if not intentionally disconnected
+        if (!intentionalDisconnectRef.current && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          const delay = getBackoffDelay(reconnectAttemptsRef.current);
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttemptsRef.current += 1;
             setState((prev) => ({
@@ -214,8 +234,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
               reconnectAttempts: reconnectAttemptsRef.current,
             }));
             connectRef.current();
-          }, RECONNECT_INTERVAL);
+          }, delay);
         }
+        // Reset the flag after processing
+        intentionalDisconnectRef.current = false;
       };
 
       wsRef.current.onerror = () => {
@@ -241,6 +263,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   // Disconnect from WebSocket
   const disconnect = React.useCallback(() => {
+    // Set flag to prevent reconnection on close
+    intentionalDisconnectRef.current = true;
     cleanup();
     reconnectAttemptsRef.current = 0;
     setState((prev) => ({
