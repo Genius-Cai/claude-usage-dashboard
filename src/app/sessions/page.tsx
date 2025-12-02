@@ -3,6 +3,8 @@
 /**
  * Sessions Page
  * Session management with current session info, history, and timeline visualization
+ *
+ * Uses plan-usage API for accurate session data from analyze_usage()
  */
 
 import * as React from 'react';
@@ -21,21 +23,13 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Separator } from '@/components/ui/separator';
 import { SessionTimer } from '@/components/dashboard/session-timer';
 import { StatsCard, StatsGrid } from '@/components/dashboard/stats-card';
-import { useCurrentSession, useRecentSessions, useRefreshData } from '@/hooks/use-usage-data';
+import { usePlanUsageRealtime, useRefreshData } from '@/hooks/use-usage-data';
 import { useSettingsStore } from '@/stores/settings-store';
-import type { Session, SessionStatus } from '@/types';
+import type { SessionStatus, PlanUsageResponse } from '@/types';
 import { cn } from '@/lib/utils';
-
-/**
- * 5-hour rolling window constant (in minutes)
- */
-const ROLLING_WINDOW_MINUTES = 5 * 60;
 
 /**
  * Format duration in minutes to readable string
@@ -106,8 +100,9 @@ function getStatusConfig(status: SessionStatus) {
 
 /**
  * Rolling window visualization component
+ * Shows the 5-hour window with usage distribution
  */
-function RollingWindowVisualization({ session }: { session: { startTime: string; totalTokens: number } | null }) {
+function RollingWindowVisualization({ planUsage }: { planUsage: PlanUsageResponse | null }) {
   const [currentTime, setCurrentTime] = React.useState(new Date());
 
   React.useEffect(() => {
@@ -118,10 +113,17 @@ function RollingWindowVisualization({ session }: { session: { startTime: string;
     return () => clearInterval(interval);
   }, []);
 
-  // Generate 5-hour blocks
+  // Generate 5-hour blocks based on the session window
   const blocks = React.useMemo(() => {
     const now = currentTime;
     const blocksArr = [];
+
+    // Calculate session start from reset time (reset_time - 5 hours = start)
+    let sessionStartTime: Date | null = null;
+    if (planUsage?.reset_info?.reset_time) {
+      const resetTime = new Date(planUsage.reset_info.reset_time);
+      sessionStartTime = new Date(resetTime.getTime() - 5 * 60 * 60 * 1000);
+    }
 
     for (let i = 0; i < 5; i++) {
       const blockStart = new Date(now.getTime() - (4 - i) * 60 * 60 * 1000);
@@ -130,11 +132,14 @@ function RollingWindowVisualization({ session }: { session: { startTime: string;
       let usage = 0;
       let isActive = false;
 
-      if (session) {
-        const sessionStart = new Date(session.startTime);
-        if (sessionStart >= blockStart && sessionStart < blockEnd) {
+      if (planUsage && sessionStartTime) {
+        // Check if this block is within the active session window
+        if (blockEnd >= sessionStartTime && blockStart <= now) {
           isActive = true;
-          usage = Math.min(100, (session.totalTokens / 50000) * 100); // Normalize to percentage
+          // Distribute usage across active blocks (simplified)
+          const totalTokens = planUsage.token_usage?.current ?? 0;
+          const tokenLimit = planUsage.token_usage?.limit ?? 1;
+          usage = Math.min(100, (totalTokens / tokenLimit) * 100);
         }
       }
 
@@ -142,13 +147,13 @@ function RollingWindowVisualization({ session }: { session: { startTime: string;
         hour: blockStart.getHours(),
         label: blockStart.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true }),
         isActive,
-        usage,
+        usage: isActive ? usage : 0,
         isCurrent: i === 4,
       });
     }
 
     return blocksArr;
-  }, [currentTime, session]);
+  }, [currentTime, planUsage]);
 
   return (
     <Card>
@@ -224,18 +229,21 @@ function RollingWindowVisualization({ session }: { session: { startTime: string;
 }
 
 /**
- * Session history item component
+ * Current session display component using plan usage data
  */
-function SessionHistoryItem({ session }: { session: Session }) {
+function CurrentSessionDisplay({ planUsage }: { planUsage: PlanUsageResponse }) {
   const { formatCurrency } = useSettingsStore();
-  const statusConfig = getStatusConfig(session.status);
+
+  const isActive = planUsage.reset_info.remaining_minutes > 0;
+  const statusConfig = getStatusConfig(isActive ? 'active' : 'expired');
   const StatusIcon = statusConfig.icon;
 
-  // Use state initializer for Date.now() to avoid impure render
-  const [currentTime] = React.useState(() => Date.now());
-  const duration = session.endTime
-    ? Math.floor((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 60000)
-    : Math.floor((currentTime - new Date(session.startTime).getTime()) / 60000);
+  // Calculate duration from remaining time (5 hour window - remaining = elapsed)
+  const elapsedMinutes = Math.max(0, 5 * 60 - planUsage.reset_info.remaining_minutes);
+
+  // Calculate start time
+  const resetTime = new Date(planUsage.reset_info.reset_time);
+  const startTime = new Date(resetTime.getTime() - 5 * 60 * 60 * 1000);
 
   return (
     <motion.div
@@ -257,7 +265,7 @@ function SessionHistoryItem({ session }: { session: Session }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium truncate">
-            {session.projectPath || 'Unnamed Session'}
+            Current Session
           </span>
           <Badge variant="outline" className={cn('shrink-0', statusConfig.className)}>
             {statusConfig.label}
@@ -266,24 +274,24 @@ function SessionHistoryItem({ session }: { session: Session }) {
         <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
           <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            {formatDuration(duration)}
+            {formatDuration(Math.floor(elapsedMinutes))}
           </span>
           <span className="flex items-center gap-1">
             <Zap className="h-3 w-3" />
-            {(session.totalTokens / 1000).toFixed(1)}K tokens
+            {planUsage.token_usage?.formatted_current ?? '0'}
           </span>
           <span className="flex items-center gap-1">
             <Activity className="h-3 w-3" />
-            {session.requestCount} requests
+            {planUsage.message_usage?.current ?? 0} messages
           </span>
         </div>
       </div>
 
       {/* Cost and time */}
       <div className="text-right shrink-0">
-        <div className="font-medium">{formatCurrency(session.totalCost)}</div>
+        <div className="font-medium">{formatCurrency(planUsage.cost_usage?.current ?? 0)}</div>
         <div className="text-xs text-muted-foreground">
-          {formatRelativeTime(session.startTime)}
+          {formatRelativeTime(startTime.toISOString())}
         </div>
       </div>
 
@@ -314,39 +322,37 @@ function SessionsSkeleton() {
 
 /**
  * Sessions Page Component
+ * Uses a single API call (plan-usage) for all session data
  */
 export default function SessionsPage() {
   const { formatCurrency } = useSettingsStore();
-  const { refresh, isRefreshing } = useRefreshData();
+  const { refresh } = useRefreshData();
 
-  // Fetch session data
-  const { data: currentSession, isLoading: isLoadingSession } = useCurrentSession();
-  const { data: recentSessions = [], isLoading: isLoadingSessions } = useRecentSessions(20);
+  // Single API call for all session data - this uses plan-usage endpoint
+  // which calls analyze_usage() for accurate session blocks
+  const { data: planUsage, isLoading, refetch } = usePlanUsageRealtime({ plan: 'max20' });
 
-  const isLoading = isLoadingSession || isLoadingSessions;
+  // Handle refresh - use internal refetch
+  const handleRefresh = React.useCallback(() => {
+    refetch();
+    refresh();
+  }, [refetch, refresh]);
 
-  // Calculate average session stats
-  const avgStats = React.useMemo(() => {
-    if (!recentSessions.length) return null;
+  // Calculate session stats from plan usage data
+  const sessionStats = React.useMemo(() => {
+    if (!planUsage) return null;
 
-    const totalDuration = recentSessions.reduce((sum, session) => {
-      const end = session.endTime ? new Date(session.endTime) : new Date();
-      const start = new Date(session.startTime);
-      return sum + (end.getTime() - start.getTime()) / 60000;
-    }, 0);
-
-    const totalTokens = recentSessions.reduce((sum, s) => sum + s.totalTokens, 0);
-    const totalCost = recentSessions.reduce((sum, s) => sum + s.totalCost, 0);
-    const totalRequests = recentSessions.reduce((sum, s) => sum + s.requestCount, 0);
+    const elapsedMinutes = Math.max(0, 5 * 60 - planUsage.reset_info.remaining_minutes);
 
     return {
-      avgDuration: Math.floor(totalDuration / recentSessions.length),
-      avgTokens: Math.floor(totalTokens / recentSessions.length),
-      avgCost: totalCost / recentSessions.length,
-      avgRequests: Math.floor(totalRequests / recentSessions.length),
-      totalSessions: recentSessions.length,
+      duration: Math.floor(elapsedMinutes),
+      tokens: planUsage.token_usage?.current ?? 0,
+      cost: planUsage.cost_usage?.current ?? 0,
+      messages: planUsage.message_usage?.current ?? 0,
+      burnRate: planUsage.burn_rate?.tokens_per_minute ?? 0,
+      costPerHour: planUsage.burn_rate?.cost_per_hour ?? 0,
     };
-  }, [recentSessions]);
+  }, [planUsage]);
 
   // Animation variants
   const containerVariants = {
@@ -376,6 +382,9 @@ export default function SessionsPage() {
     );
   }
 
+  // Check if there's an active session with usage
+  const hasActiveSession = planUsage && (planUsage.message_usage?.current ?? 0) > 0;
+
   return (
     <div className="container mx-auto px-4 py-6 pb-24 md:pb-6">
       <motion.div
@@ -394,49 +403,44 @@ export default function SessionsPage() {
 
         {/* Current Session & Rolling Window */}
         <motion.div variants={itemVariants} className="grid gap-6 lg:grid-cols-2">
-          <SessionTimer
-            session={currentSession ?? null}
-            onRefresh={refresh}
-          />
-          <RollingWindowVisualization
-            session={currentSession ? {
-              startTime: currentSession.startTime,
-              totalTokens: currentSession.totalTokens,
-            } : null}
-          />
+          {/* SessionTimer uses usePlanUsageRealtime internally, no need to pass session */}
+          <SessionTimer onRefresh={handleRefresh} />
+          <RollingWindowVisualization planUsage={planUsage ?? null} />
         </motion.div>
 
-        {/* Average Session Stats */}
-        {avgStats && (
+        {/* Current Session Stats */}
+        {sessionStats && (
           <motion.div variants={itemVariants}>
-            <h2 className="text-lg font-medium mb-4">Session Averages</h2>
+            <h2 className="text-lg font-medium mb-4">Current Session Stats</h2>
             <StatsGrid columns={4}>
               <StatsCard
-                title="Avg Duration"
-                value={formatDuration(avgStats.avgDuration)}
+                title="Session Duration"
+                value={formatDuration(sessionStats.duration)}
                 icon={Clock}
-                subtitle={`${avgStats.totalSessions} sessions`}
+                subtitle="Active time"
               />
               <StatsCard
-                title="Avg Tokens"
-                value={avgStats.avgTokens}
+                title="Tokens Used"
+                value={sessionStats.tokens.toLocaleString()}
                 icon={Zap}
+                subtitle={`${sessionStats.burnRate.toFixed(1)}/min`}
               />
               <StatsCard
-                title="Avg Requests"
-                value={avgStats.avgRequests}
+                title="Messages"
+                value={sessionStats.messages}
                 icon={Activity}
               />
               <StatsCard
-                title="Avg Cost"
-                value={formatCurrency(avgStats.avgCost)}
+                title="Session Cost"
+                value={formatCurrency(sessionStats.cost)}
                 icon={DollarSign}
+                subtitle={`$${sessionStats.costPerHour.toFixed(2)}/hr`}
               />
             </StatsGrid>
           </motion.div>
         )}
 
-        {/* Session Timeline */}
+        {/* Session History */}
         <motion.div variants={itemVariants}>
           <Card>
             <CardHeader>
@@ -444,30 +448,24 @@ export default function SessionsPage() {
                 <div>
                   <CardTitle className="text-base font-medium">Session History</CardTitle>
                   <CardDescription>
-                    Your recent Claude Code sessions
+                    Your current Claude Code session
                   </CardDescription>
                 </div>
                 <Badge variant="secondary">
-                  {recentSessions.length} sessions
+                  {hasActiveSession ? '1 active session' : 'No active session'}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent>
-              {recentSessions.length > 0 ? (
+              {hasActiveSession && planUsage ? (
                 <div className="space-y-3">
-                  {recentSessions.map((session, index) => (
-                    <React.Fragment key={session.id}>
-                      <SessionHistoryItem session={session} />
-                      {index < recentSessions.length - 1 && (
-                        <Separator className="hidden" />
-                      )}
-                    </React.Fragment>
-                  ))}
+                  <CurrentSessionDisplay planUsage={planUsage} />
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                   <Calendar className="h-12 w-12 mb-4 opacity-50" />
-                  <p>No session history available</p>
+                  <p>No active session</p>
+                  <p className="text-sm mt-2">Start using Claude Code to begin a session</p>
                 </div>
               )}
             </CardContent>

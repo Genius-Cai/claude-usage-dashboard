@@ -177,7 +177,7 @@ export function PlanCard({ plan, isSelected, onSelect, className }: PlanCardProp
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       className={cn(
-        'relative cursor-pointer rounded-lg border-2 p-4 transition-colors',
+        'relative flex flex-col cursor-pointer rounded-lg border-2 p-4 transition-colors',
         isSelected
           ? 'border-primary bg-primary/5'
           : 'border-border hover:border-primary/50',
@@ -203,7 +203,7 @@ export function PlanCard({ plan, isSelected, onSelect, className }: PlanCardProp
       <div className="flex items-center gap-3">
         <div
           className={cn(
-            'flex h-10 w-10 items-center justify-center rounded-lg',
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
             plan === 'free' && 'bg-gray-100 dark:bg-gray-800',
             plan === 'pro' && 'bg-blue-100 dark:bg-blue-900/30',
             plan === 'max_5x' && 'bg-purple-100 dark:bg-purple-900/30',
@@ -220,8 +220,8 @@ export function PlanCard({ plan, isSelected, onSelect, className }: PlanCardProp
             )}
           />
         </div>
-        <div>
-          <h3 className="font-semibold">{planConfig.displayName}</h3>
+        <div className="min-w-0">
+          <h3 className="font-semibold truncate">{planConfig.displayName}</h3>
           <p className="text-sm text-muted-foreground">
             {planConfig.monthlyPrice === 0
               ? 'Free forever'
@@ -230,7 +230,7 @@ export function PlanCard({ plan, isSelected, onSelect, className }: PlanCardProp
         </div>
       </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-4 space-y-2 flex-1">
         <div className="text-xs text-muted-foreground">
           <span className="font-medium text-foreground">
             {(planConfig.tokenLimit / 1_000_000).toFixed(0)}M
@@ -245,7 +245,7 @@ export function PlanCard({ plan, isSelected, onSelect, className }: PlanCardProp
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-1">
+      <div className="mt-4 flex flex-wrap gap-1 min-h-[28px]">
         {planConfig.features.slice(0, 2).map((feature, index) => (
           <Badge key={index} variant="outline" className="text-xs">
             {feature}
@@ -267,13 +267,14 @@ export function PlanSelectorGrid({ className }: PlanSelectorGridProps) {
   const { plan, setPlan } = useSettingsStore();
 
   return (
-    <div className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
+    <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4', className)}>
       {Object.values(PLAN_CONFIGS).map((planConfig) => (
         <PlanCard
           key={planConfig.id}
           plan={planConfig.id}
           isSelected={planConfig.id === plan}
           onSelect={setPlan}
+          className="h-full"
         />
       ))}
     </div>

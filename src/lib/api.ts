@@ -20,6 +20,8 @@ import type {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 const API_TIMEOUT = 30000;
+const MAX_RETRIES = 3;
+const BASE_RETRY_DELAY = 1000; // 1 second
 
 // ============================================================================
 // Error Handling
@@ -52,38 +54,99 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
 interface RequestOptions extends RequestInit {
   timeout?: number;
+  maxRetries?: number;
+}
+
+/**
+ * Determines if an error is recoverable and should be retried
+ */
+function isRecoverableError(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    // Retry on network errors and timeouts
+    if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') {
+      return true;
+    }
+    // Retry on server errors (5xx) but not client errors (4xx)
+    if (error.statusCode >= 500 && error.statusCode < 600) {
+      return true;
+    }
+    return false;
+  }
+  // Retry on generic network failures
+  if (error instanceof TypeError && error.message.includes('fetch')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Calculates delay with exponential backoff and jitter
+ */
+function calculateRetryDelay(attempt: number): number {
+  const exponentialDelay = BASE_RETRY_DELAY * Math.pow(2, attempt);
+  const jitter = Math.random() * 0.3 * exponentialDelay; // Add up to 30% jitter
+  return Math.min(exponentialDelay + jitter, 10000); // Cap at 10 seconds
+}
+
+/**
+ * Delays execution for the specified duration
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function apiRequest<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { timeout = API_TIMEOUT, ...fetchOptions } = options;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  const { timeout = API_TIMEOUT, maxRetries = MAX_RETRIES, ...fetchOptions } = options;
+  let lastError: ApiError | null = null;
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...fetchOptions,
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...fetchOptions.headers,
-      },
-    });
-    clearTimeout(timeoutId);
-    return handleResponse<T>(response);
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof ApiError) throw error;
-    if (error instanceof Error) {
-      if (error.name === 'AbortError') {
-        throw new ApiError(408, 'TIMEOUT', 'Request timed out');
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...fetchOptions,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...fetchOptions.headers,
+        },
+      });
+      clearTimeout(timeoutId);
+      return handleResponse<T>(response);
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      // Convert to ApiError for consistent handling
+      if (error instanceof ApiError) {
+        lastError = error;
+      } else if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          lastError = new ApiError(408, 'TIMEOUT', 'Request timed out');
+        } else {
+          lastError = new ApiError(0, 'NETWORK_ERROR', error.message);
+        }
+      } else {
+        lastError = new ApiError(0, 'UNKNOWN_ERROR', 'An unknown error occurred');
       }
-      throw new ApiError(0, 'NETWORK_ERROR', error.message);
+
+      // Check if we should retry
+      const isLastAttempt = attempt >= maxRetries;
+      if (isLastAttempt || !isRecoverableError(lastError)) {
+        throw lastError;
+      }
+
+      // Wait before retrying with exponential backoff
+      const retryDelay = calculateRetryDelay(attempt);
+      await delay(retryDelay);
     }
-    throw new ApiError(0, 'UNKNOWN_ERROR', 'An unknown error occurred');
   }
+
+  // This should never be reached, but TypeScript needs it
+  throw lastError ?? new ApiError(0, 'UNKNOWN_ERROR', 'An unknown error occurred');
 }
 
 // ============================================================================
@@ -460,6 +523,74 @@ export function generateMockDashboardData(): DashboardData {
 }
 
 // ============================================================================
+// Session Functions (derived from plan-usage API)
+// ============================================================================
+
+/**
+ * Fetch recent sessions from plan-usage API
+ * Creates session objects from the current plan usage data
+ */
+export async function fetchRecentSessions(_limit: number = 10): Promise<Session[]> {
+  try {
+    const planUsage = await apiRequest<PlanUsageResponse>('/usage/plan-usage?plan=max20');
+
+    // Create a session from current plan usage data
+    // The plan-usage data represents the current active session block
+    const sessionDurationMs = 5 * 60 * 60 * 1000; // 5-hour window
+    const resetTime = new Date(planUsage.reset_info.reset_time);
+    const startTime = new Date(resetTime.getTime() - sessionDurationMs);
+
+    const currentSession: Session = {
+      id: `session-${startTime.toISOString()}`,
+      startTime: startTime.toISOString(),
+      endTime: planUsage.reset_info.reset_time,
+      status: planUsage.reset_info.remaining_minutes > 0 ? 'active' : 'expired',
+      totalTokens: planUsage.token_usage.current,
+      totalCost: planUsage.cost_usage.current,
+      requestCount: planUsage.message_usage.current,
+      lastActivityTime: planUsage.timestamp,
+    };
+
+    // For now, return only the current session
+    // Future enhancement: backend could return historical session blocks
+    return planUsage.message_usage.current > 0 ? [currentSession] : [];
+  } catch (error) {
+    console.error('Failed to fetch recent sessions:', error);
+    return [];
+  }
+}
+
+/**
+ * Fetch sessions with pagination
+ */
+export async function fetchSessions(pagination?: { page: number; pageSize: number }): Promise<{
+  items: Session[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+}> {
+  const sessions = await fetchRecentSessions(100);
+  const page = pagination?.page ?? 1;
+  const pageSize = pagination?.pageSize ?? 10;
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  const items = sessions.slice(start, end);
+
+  return {
+    items,
+    total: sessions.length,
+    page,
+    pageSize,
+    totalPages: Math.ceil(sessions.length / pageSize) || 1,
+    hasNext: end < sessions.length,
+    hasPrevious: page > 1,
+  };
+}
+
+// ============================================================================
 // API Client Export
 // ============================================================================
 
@@ -475,6 +606,10 @@ export const api = {
     fetchByPeriod: fetchUsageByPeriod,
     fetchByModel: fetchUsageByModel,
     fetchPlanUsageRealtime,
+  },
+  sessions: {
+    fetch: fetchSessions,
+    fetchRecent: fetchRecentSessions,
   },
   health: {
     check: checkApiHealth,

@@ -3,6 +3,7 @@
 /**
  * Session Timer Component
  * Displays countdown timer for current session with visual indicators
+ * Uses plan-usage API for accurate session data from analyze_usage()
  */
 
 import * as React from 'react';
@@ -13,14 +14,18 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { usePlanUsageRealtime } from '@/hooks';
 import type { CurrentSession, SessionStatus } from '@/types';
 import { cn } from '@/lib/utils';
 
 interface SessionTimerProps {
-  session: CurrentSession | null;
+  /** @deprecated Use plan prop instead. Session data is now fetched from plan-usage API */
+  session?: CurrentSession | null;
   isLoading?: boolean;
   onRefresh?: () => void;
   className?: string;
+  /** Plan to fetch usage data for (default: 'max20') */
+  plan?: string;
 }
 
 /**
@@ -85,27 +90,37 @@ function getStatusConfig(status: SessionStatus) {
 
 /**
  * Session timer card with countdown
+ * Now uses plan-usage API for accurate session data from analyze_usage()
  */
 export function SessionTimer({
-  session,
-  isLoading = false,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  session: _legacySession,
+  isLoading: externalLoading = false,
   onRefresh,
   className,
+  plan = 'max20',
 }: SessionTimerProps) {
-  const [remainingTime, setRemainingTime] = React.useState(
-    session?.remainingTime || 0
-  );
+  // Fetch plan usage data which contains accurate session info from analyze_usage()
+  const { data, isLoading: queryLoading, refetch } = usePlanUsageRealtime({ plan });
 
-  // Update remaining time when session changes
+  // Convert remaining_minutes from API to seconds for countdown
+  const initialRemainingSeconds = data?.reset_info?.remaining_minutes
+    ? data.reset_info.remaining_minutes * 60
+    : 0;
+
+  const [remainingTime, setRemainingTime] = React.useState(initialRemainingSeconds);
+
+  // Update remaining time when API data changes
   React.useEffect(() => {
-    if (session?.remainingTime) {
-      setRemainingTime(session.remainingTime);
+    if (data?.reset_info?.remaining_minutes) {
+      setRemainingTime(data.reset_info.remaining_minutes * 60);
     }
-  }, [session?.remainingTime]);
+  }, [data?.reset_info?.remaining_minutes]);
 
-  // Countdown timer
+  // Countdown timer - only run when we have valid data
+  const shouldRunTimer = Boolean(data) && remainingTime > 0;
   React.useEffect(() => {
-    if (!session || session.status !== 'active' || remainingTime <= 0) {
+    if (!shouldRunTimer) {
       return;
     }
 
@@ -114,22 +129,22 @@ export function SessionTimer({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [session, remainingTime]);
+  }, [shouldRunTimer]);
 
-  // Track the initial time for progress calculation
-  const [initialTime] = React.useState(() => Date.now());
+  // Calculate progress based on cost usage percentage from API
+  const progressPercentage = data?.cost_usage?.percentage ?? 0;
 
-  // Calculate progress percentage using memoized initial time
-  const totalDuration = session
-    ? session.remainingTime + (initialTime - new Date(session.startTime).getTime()) / 1000
-    : 0;
-  const progressPercentage = totalDuration > 0
-    ? ((totalDuration - remainingTime) / totalDuration) * 100
-    : 0;
-
-  // Warning thresholds
+  // Warning thresholds based on remaining time
   const isWarning = remainingTime > 0 && remainingTime <= 30 * 60; // 30 minutes
   const isCritical = remainingTime > 0 && remainingTime <= 10 * 60; // 10 minutes
+
+  const isLoading = externalLoading || queryLoading;
+
+  // Handle refresh - use both external handler and internal refetch
+  const handleRefresh = React.useCallback(() => {
+    refetch();
+    onRefresh?.();
+  }, [refetch, onRefresh]);
 
   if (isLoading) {
     return (
@@ -149,15 +164,15 @@ export function SessionTimer({
     );
   }
 
-  if (!session) {
+  if (!data) {
     return (
       <Card className={className}>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
             Session Status
           </CardTitle>
-          {onRefresh && (
-            <Button variant="ghost" size="icon" onClick={onRefresh}>
+          {handleRefresh && (
+            <Button variant="ghost" size="icon" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4" />
             </Button>
           )}
@@ -170,8 +185,14 @@ export function SessionTimer({
     );
   }
 
-  const statusConfig = getStatusConfig(session.status);
+  // Determine status based on remaining time
+  const sessionStatus: SessionStatus = remainingTime > 0 ? 'active' : 'expired';
+  const statusConfig = getStatusConfig(sessionStatus);
   const StatusIcon = statusConfig.icon;
+
+  // Extract session stats from plan usage data
+  const sessionCost = data.cost_usage?.current ?? 0;
+  const sessionMessages = data.message_usage?.current ?? 0;
 
   return (
     <Card
@@ -194,8 +215,8 @@ export function SessionTimer({
             <StatusIcon className="h-3 w-3" />
             {statusConfig.label}
           </Badge>
-          {onRefresh && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onRefresh}>
+          {handleRefresh && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4" />
             </Button>
           )}
@@ -205,7 +226,7 @@ export function SessionTimer({
         {/* Timer Display */}
         <AnimatePresence mode="wait">
           <motion.div
-            key={remainingTime}
+            key={Math.floor(remainingTime / 60)}
             initial={{ opacity: 0.8 }}
             animate={{ opacity: 1 }}
             className={cn(
@@ -218,10 +239,10 @@ export function SessionTimer({
           </motion.div>
         </AnimatePresence>
 
-        {/* Progress Bar */}
+        {/* Progress Bar - shows cost usage percentage */}
         <div className="space-y-2">
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Session Progress</span>
+            <span>Session Usage</span>
             <span>{progressPercentage.toFixed(1)}%</span>
           </div>
           <Progress
@@ -258,23 +279,23 @@ export function SessionTimer({
           )}
         </AnimatePresence>
 
-        {/* Session Stats */}
+        {/* Session Stats - using data from plan-usage API */}
         <div className="grid grid-cols-3 gap-4 pt-2 border-t">
           <div className="text-center">
             <div className="text-lg font-semibold">
-              {session.requestCount}
+              {sessionMessages}
             </div>
-            <div className="text-xs text-muted-foreground">Requests</div>
+            <div className="text-xs text-muted-foreground">Messages</div>
           </div>
           <div className="text-center">
             <div className="text-lg font-semibold">
-              {(session.totalTokens / 1000).toFixed(1)}K
+              {data.token_usage?.formatted_current ?? '0'}
             </div>
             <div className="text-xs text-muted-foreground">Tokens</div>
           </div>
           <div className="text-center">
             <div className="text-lg font-semibold">
-              ${session.totalCost.toFixed(2)}
+              ${sessionCost.toFixed(2)}
             </div>
             <div className="text-xs text-muted-foreground">Cost</div>
           </div>
@@ -286,25 +307,42 @@ export function SessionTimer({
 
 /**
  * Compact session timer for header
+ * Uses plan-usage API for accurate session data
  */
 interface CompactSessionTimerProps {
-  session: CurrentSession | null;
+  /** @deprecated Session data is now fetched from plan-usage API */
+  session?: CurrentSession | null;
   className?: string;
+  /** Plan to fetch usage data for (default: 'max20') */
+  plan?: string;
 }
 
-export function CompactSessionTimer({ session, className }: CompactSessionTimerProps) {
-  const [remainingTime, setRemainingTime] = React.useState(
-    session?.remainingTime || 0
-  );
+export function CompactSessionTimer({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  session: _legacySession,
+  className,
+  plan = 'max20',
+}: CompactSessionTimerProps) {
+  // Fetch plan usage data which contains accurate session info
+  const { data, isLoading } = usePlanUsageRealtime({ plan });
+
+  // Convert remaining_minutes from API to seconds for countdown
+  const initialRemainingSeconds = data?.reset_info?.remaining_minutes
+    ? data.reset_info.remaining_minutes * 60
+    : 0;
+
+  const [remainingTime, setRemainingTime] = React.useState(initialRemainingSeconds);
 
   React.useEffect(() => {
-    if (session?.remainingTime) {
-      setRemainingTime(session.remainingTime);
+    if (data?.reset_info?.remaining_minutes) {
+      setRemainingTime(data.reset_info.remaining_minutes * 60);
     }
-  }, [session?.remainingTime]);
+  }, [data?.reset_info?.remaining_minutes]);
 
+  // Countdown timer - only run when we have valid data
+  const shouldRunTimer = Boolean(data) && remainingTime > 0;
   React.useEffect(() => {
-    if (!session || session.status !== 'active' || remainingTime <= 0) {
+    if (!shouldRunTimer) {
       return;
     }
 
@@ -313,9 +351,18 @@ export function CompactSessionTimer({ session, className }: CompactSessionTimerP
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [session, remainingTime]);
+  }, [shouldRunTimer]);
 
-  if (!session) {
+  if (isLoading) {
+    return (
+      <div className={cn('flex items-center gap-2 text-muted-foreground', className)}>
+        <Clock className="h-4 w-4" />
+        <span className="text-sm">Loading...</span>
+      </div>
+    );
+  }
+
+  if (!data) {
     return (
       <div className={cn('flex items-center gap-2 text-muted-foreground', className)}>
         <Clock className="h-4 w-4" />

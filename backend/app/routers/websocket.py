@@ -7,11 +7,13 @@ real-time usage data to connected clients at regular intervals.
 import asyncio
 import json
 import logging
+import secrets
 from datetime import datetime
 from datetime import timezone as tz
-from typing import Any, Dict, Set
+from typing import Any, Dict, Optional, Set
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from app.core.config import get_settings
 from app.services.data_service import get_data_service
@@ -19,6 +21,33 @@ from app.services.data_service import get_data_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["websocket"])
+
+
+def verify_websocket_token(token: Optional[str]) -> bool:
+    """Verify the WebSocket authentication token.
+
+    If WEBSOCKET_API_KEY is configured, validates the provided token.
+    If WEBSOCKET_API_KEY is empty, authentication is bypassed (development mode).
+
+    Args:
+        token: The authentication token from query parameter.
+
+    Returns:
+        True if authentication succeeds, False otherwise.
+    """
+    settings = get_settings()
+    configured_key = settings.WEBSOCKET_API_KEY
+
+    # If no API key is configured, allow connections (development mode)
+    if not configured_key:
+        return True
+
+    # If API key is configured, require valid token
+    if not token:
+        return False
+
+    # Use constant-time comparison to prevent timing attacks
+    return secrets.compare_digest(token, configured_key)
 
 
 class ConnectionManager:
@@ -197,11 +226,19 @@ def stop_broadcast_task() -> None:
 
 
 @router.websocket("/ws/realtime")
-async def websocket_realtime(websocket: WebSocket) -> None:
+async def websocket_realtime(
+    websocket: WebSocket,
+    token: Optional[str] = Query(default=None),
+) -> None:
     """WebSocket endpoint for real-time usage data.
 
     Clients connecting to this endpoint will receive real-time
     usage data broadcasts every 10 seconds (configurable).
+
+    Authentication:
+    - If WEBSOCKET_API_KEY is set, clients must provide matching token
+      via query parameter: /ws/realtime?token=<your-api-key>
+    - If WEBSOCKET_API_KEY is empty, authentication is bypassed
 
     Protocol:
     - On connection: Client receives immediate data snapshot
@@ -213,6 +250,12 @@ async def websocket_realtime(websocket: WebSocket) -> None:
     - error: Error occurred during data fetch
     - welcome: Initial connection acknowledgment
     """
+    # Verify authentication before accepting connection
+    if not verify_websocket_token(token):
+        logger.warning("WebSocket connection rejected: invalid or missing token")
+        await websocket.close(code=4001, reason="Unauthorized: invalid or missing token")
+        return
+
     await manager.connect(websocket)
 
     # Ensure broadcast task is running

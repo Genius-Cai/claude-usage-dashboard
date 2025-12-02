@@ -42,6 +42,17 @@ class Settings(BaseSettings):
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
+    CORS_ALLOW_METHODS: List[str] = ["GET", "POST", "OPTIONS"]
+    CORS_ALLOW_HEADERS: List[str] = [
+        "Accept",
+        "Accept-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+    ]
+
+    # WebSocket authentication
+    WEBSOCKET_API_KEY: str = ""  # Optional: Set via environment variable for WS auth
 
     # Application settings
     DEBUG: bool = False

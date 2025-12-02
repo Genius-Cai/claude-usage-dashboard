@@ -20,7 +20,7 @@ import type {
 // Configuration
 // ============================================================================
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001/ws';
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
 const RECONNECT_INTERVAL = 5000; // 5 seconds
 const MAX_RECONNECT_ATTEMPTS = 5;
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
@@ -83,6 +83,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const heartbeatRef = React.useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const connectRef = React.useRef<() => void>(() => {});
+  const reconnectAttemptsRef = React.useRef<number>(0);
 
   const [state, setState] = React.useState<WebSocketState>({
     status: 'disconnected',
@@ -118,36 +119,47 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         // Handle different message types
         switch (message.type) {
           case 'usage_update':
-            onUsageUpdate?.(message.payload as UsageUpdatePayload);
-            // Invalidate relevant queries
-            queryClient.invalidateQueries({ queryKey: queryKeys.dashboard() });
-            queryClient.invalidateQueries({ queryKey: queryKeys.stats('today') });
+            // Runtime validation before type assertion
+            if (message.payload && typeof message.payload === 'object' && 'tokens' in message.payload) {
+              onUsageUpdate?.(message.payload as UsageUpdatePayload);
+              // Invalidate relevant queries
+              queryClient.invalidateQueries({ queryKey: queryKeys.dashboard() });
+              queryClient.invalidateQueries({ queryKey: queryKeys.stats('today') });
+            }
             break;
 
           case 'session_update':
-            onSessionUpdate?.(message.payload as SessionUpdatePayload);
-            queryClient.invalidateQueries({ queryKey: queryKeys.currentSession() });
+            // Runtime validation before type assertion
+            if (message.payload && typeof message.payload === 'object' && 'session' in message.payload) {
+              onSessionUpdate?.(message.payload as SessionUpdatePayload);
+              queryClient.invalidateQueries({ queryKey: queryKeys.currentSession() });
+            }
             break;
 
           case 'limit_warning':
-            onLimitWarning?.(message.payload as LimitWarningPayload);
+            // Runtime validation before type assertion
+            if (message.payload && typeof message.payload === 'object') {
+              onLimitWarning?.(message.payload as LimitWarningPayload);
+            }
             break;
 
           case 'connection_status':
             // Handle connection status updates
             break;
 
-          case 'error':
+          case 'error': {
             const error = new Error((message.payload as { message: string }).message);
             setState((prev) => ({ ...prev, error }));
             onError?.(error);
             break;
+          }
 
           default:
-            console.warn('Unknown message type:', message.type);
+            // Unknown message type - silently ignore in production
+            break;
         }
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
+      } catch {
+        // Failed to parse WebSocket message - silently ignore in production
       }
     },
     [queryClient, onUsageUpdate, onSessionUpdate, onLimitWarning, onError]
@@ -179,6 +191,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       wsRef.current = new WebSocket(WS_URL);
 
       wsRef.current.onopen = () => {
+        reconnectAttemptsRef.current = 0;
         setState((prev) => ({
           ...prev,
           status: 'connected',
@@ -192,12 +205,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         setState((prev) => ({ ...prev, status: 'disconnected' }));
         onDisconnect?.();
 
-        // Attempt reconnection using ref to avoid circular dependency
-        if (state.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        // Attempt reconnection using ref to get current value
+        if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
           reconnectTimeoutRef.current = setTimeout(() => {
+            reconnectAttemptsRef.current += 1;
             setState((prev) => ({
               ...prev,
-              reconnectAttempts: prev.reconnectAttempts + 1,
+              reconnectAttempts: reconnectAttemptsRef.current,
             }));
             connectRef.current();
           }, RECONNECT_INTERVAL);
@@ -223,12 +237,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     onDisconnect,
     onError,
     startHeartbeat,
-    state.reconnectAttempts,
   ]);
 
   // Disconnect from WebSocket
   const disconnect = React.useCallback(() => {
     cleanup();
+    reconnectAttemptsRef.current = 0;
     setState((prev) => ({
       ...prev,
       status: 'disconnected',
@@ -240,9 +254,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const send = React.useCallback((message: WebSocketMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(message));
-    } else {
-      console.warn('WebSocket is not connected');
     }
+    // Silently ignore send attempts when not connected
   }, []);
 
   // Keep connectRef updated with the latest connect function
@@ -357,8 +370,8 @@ export function useSimulatedWebSocket(
     setStatus('disconnected');
   }, []);
 
-  const send = React.useCallback((message: WebSocketMessage) => {
-    console.log('Simulated WebSocket send:', message);
+  const send = React.useCallback((_message: WebSocketMessage) => {
+    // Simulated WebSocket send - no-op in development
   }, []);
 
   React.useEffect(() => {

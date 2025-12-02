@@ -225,7 +225,7 @@ export default function SettingsPage() {
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="space-y-6 max-w-4xl"
+        className="space-y-6 max-w-5xl mx-auto"
       >
         {/* Page Header */}
         <motion.div variants={itemVariants}>
@@ -242,13 +242,14 @@ export default function SettingsPage() {
             description="Select your Claude subscription plan to track usage limits correctly"
             icon={CreditCard}
           >
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {Object.values(PLAN_CONFIGS).map((planConfig) => (
                 <PlanCard
                   key={planConfig.id}
                   plan={planConfig.id}
                   isSelected={planConfig.id === plan}
                   onSelect={setPlan}
+                  className="h-full"
                 />
               ))}
             </div>
@@ -371,7 +372,7 @@ export default function SettingsPage() {
             icon={Palette}
           >
             {mounted && (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <ThemeOption
                   value="light"
                   label="Light"
