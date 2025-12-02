@@ -1,7 +1,7 @@
 # Claude Usage Dashboard
 
 <p align="center">
-  <img src="public/icons/icon-192x192.png" alt="Claude Usage Dashboard" width="80" />
+  <img src="public/icons/logo.svg" alt="Claude Usage Dashboard" width="100" />
 </p>
 
 <p align="center">
@@ -410,8 +410,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [shadcn/ui](https://ui.shadcn.com/) - Beautiful components
 - [FastAPI](https://fastapi.tiangolo.com/) - Backend framework
 
----
-
-<p align="center">
-  Made with Claude Code
-</p>

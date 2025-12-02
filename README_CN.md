@@ -1,7 +1,7 @@
 # Claude 使用量仪表盘
 
 <p align="center">
-  <img src="public/icons/icon-192x192.png" alt="Claude Usage Dashboard" width="80" />
+  <img src="public/icons/logo.svg" alt="Claude Usage Dashboard" width="100" />
 </p>
 
 <p align="center">
@@ -410,8 +410,3 @@ MIT 许可证 - 详见 [LICENSE](LICENSE)
 - [shadcn/ui](https://ui.shadcn.com/) - 精美组件库
 - [FastAPI](https://fastapi.tiangolo.com/) - 后端框架
 
----
-
-<p align="center">
-  使用 Claude Code 构建
-</p>
