@@ -6,7 +6,6 @@ Dashboard backend, supporting environment variables and .env file loading.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -36,14 +35,14 @@ class Settings(BaseSettings):
     CLAUDE_DATA_PATH: str = str(Path.home() / ".claude" / "projects")
 
     # CORS configuration
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
-    CORS_ALLOW_METHODS: List[str] = ["GET", "POST", "OPTIONS"]
-    CORS_ALLOW_HEADERS: List[str] = [
+    CORS_ALLOW_METHODS: list[str] = ["GET", "POST", "OPTIONS"]
+    CORS_ALLOW_HEADERS: list[str] = [
         "Accept",
         "Accept-Language",
         "Content-Type",

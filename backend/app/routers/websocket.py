@@ -10,10 +10,8 @@ import logging
 import secrets
 from datetime import datetime
 from datetime import timezone as tz
-from typing import Any, Dict, Optional, Set
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
-from starlette.websockets import WebSocketState
 
 from app.core.config import get_settings
 from app.services.data_service import get_data_service
@@ -23,7 +21,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])
 
 
-def verify_websocket_token(token: Optional[str]) -> bool:
+def verify_websocket_token(token: str | None) -> bool:
     """Verify the WebSocket authentication token.
 
     If WEBSOCKET_API_KEY is configured, validates the provided token.
@@ -59,7 +57,7 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         """Initialize the connection manager."""
-        self._active_connections: Set[WebSocket] = set()
+        self._active_connections: set[WebSocket] = set()
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket) -> None:
@@ -87,7 +85,7 @@ class ConnectionManager:
             f"WebSocket disconnected. Active connections: {len(self._active_connections)}"
         )
 
-    async def broadcast(self, message: Dict[str, Any]) -> None:
+    async def broadcast(self, message: dict[str, object]) -> None:
         """Broadcast a message to all connected clients.
 
         Args:
@@ -103,7 +101,7 @@ class ConnectionManager:
         async with self._lock:
             connections = list(self._active_connections)
 
-        disconnected: Set[WebSocket] = set()
+        disconnected: set[WebSocket] = set()
 
         for connection in connections:
             try:
@@ -127,7 +125,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-async def get_realtime_data() -> Dict[str, Any]:
+async def get_realtime_data() -> dict[str, object]:
     """Fetch real-time usage data for broadcasting.
 
     Returns:
@@ -228,7 +226,7 @@ def stop_broadcast_task() -> None:
 @router.websocket("/ws/realtime")
 async def websocket_realtime(
     websocket: WebSocket,
-    token: Optional[str] = Query(default=None),
+    token: str | None = Query(default=None),
 ) -> None:
     """WebSocket endpoint for real-time usage data.
 

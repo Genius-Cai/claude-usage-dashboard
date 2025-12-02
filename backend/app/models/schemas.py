@@ -5,7 +5,6 @@ to ensure type safety and automatic validation/serialization.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -98,11 +97,11 @@ class DailyStatsResponse(BaseModel):
         ge=0.0,
         description="Total estimated cost in USD"
     )
-    models_used: List[str] = Field(
+    models_used: list[str] = Field(
         default_factory=list,
         description="List of unique models used"
     )
-    hourly_distribution: Dict[int, int] = Field(
+    hourly_distribution: dict[int, int] = Field(
         default_factory=dict,
         description="Request count per hour (0-23)"
     )
@@ -114,11 +113,11 @@ class SessionInfoResponse(BaseModel):
     Tracks the 5-hour rolling window session state.
     """
 
-    session_start: Optional[datetime] = Field(
+    session_start: datetime | None = Field(
         default=None,
         description="Start time of the current session window"
     )
-    session_end: Optional[datetime] = Field(
+    session_end: datetime | None = Field(
         default=None,
         description="Projected end time of the session window"
     )
@@ -180,7 +179,7 @@ class RealtimeUsageResponse(BaseModel):
         default_factory=BurnRateInfo,
         description="Current consumption rate"
     )
-    recent_entries: List[UsageEntryResponse] = Field(
+    recent_entries: list[UsageEntryResponse] = Field(
         default_factory=list,
         max_length=50,
         description="Most recent usage entries (up to 50)"
@@ -199,11 +198,11 @@ class ModelStatsResponse(BaseModel):
         le=100.0,
         description="Percentage of total usage"
     )
-    first_used: Optional[datetime] = Field(
+    first_used: datetime | None = Field(
         default=None,
         description="First recorded usage of this model"
     )
-    last_used: Optional[datetime] = Field(
+    last_used: datetime | None = Field(
         default=None,
         description="Most recent usage of this model"
     )
@@ -217,7 +216,7 @@ class ProjectStatsResponse(BaseModel):
     total_requests: int = Field(ge=0, description="Total requests for this project")
     tokens: TokenBreakdown = Field(description="Token breakdown for this project")
     total_cost_usd: float = Field(ge=0.0, description="Total cost for this project")
-    last_active: Optional[datetime] = Field(
+    last_active: datetime | None = Field(
         default=None,
         description="Most recent activity in this project"
     )
@@ -228,12 +227,12 @@ class HistoryResponse(BaseModel):
 
     days_requested: int = Field(ge=1, description="Number of days requested")
     days_with_data: int = Field(ge=0, description="Number of days with actual data")
-    daily_stats: List[DailyStatsResponse] = Field(
+    daily_stats: list[DailyStatsResponse] = Field(
         description="Daily statistics for each day"
     )
     total_tokens: int = Field(ge=0, description="Total tokens across all days")
     total_cost_usd: float = Field(ge=0.0, description="Total cost across all days")
-    date_range: Dict[str, Optional[str]] = Field(
+    date_range: dict[str, str | None] = Field(
         description="Start and end dates of the data"
     )
 
@@ -241,15 +240,15 @@ class HistoryResponse(BaseModel):
 class ModelStatsListResponse(BaseModel):
     """Response containing statistics for all models."""
 
-    models: List[ModelStatsResponse] = Field(
+    models: list[ModelStatsResponse] = Field(
         description="Statistics for each model"
     )
     total_models: int = Field(ge=0, description="Number of unique models")
-    period_start: Optional[datetime] = Field(
+    period_start: datetime | None = Field(
         default=None,
         description="Start of the analysis period"
     )
-    period_end: Optional[datetime] = Field(
+    period_end: datetime | None = Field(
         default=None,
         description="End of the analysis period"
     )
@@ -258,7 +257,7 @@ class ModelStatsListResponse(BaseModel):
 class ProjectStatsListResponse(BaseModel):
     """Response containing statistics for all projects."""
 
-    projects: List[ProjectStatsResponse] = Field(
+    projects: list[ProjectStatsResponse] = Field(
         description="Statistics for each project"
     )
     total_projects: int = Field(ge=0, description="Number of unique projects")
@@ -271,7 +270,7 @@ class HealthResponse(BaseModel):
     version: str = Field(description="API version")
     data_path_valid: bool = Field(description="Whether data path is accessible")
     timestamp: datetime = Field(description="Current server time")
-    details: Dict[str, Any] = Field(
+    details: dict[str, object] = Field(
         default_factory=dict,
         description="Additional health check details"
     )
@@ -282,7 +281,7 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(description="Error type or code")
     message: str = Field(description="Human-readable error message")
-    details: Optional[Dict[str, Any]] = Field(
+    details: dict[str, object] | None = Field(
         default=None,
         description="Additional error details"
     )
@@ -326,11 +325,11 @@ class PlanUsageResponse(BaseModel):
     message_usage: UsageVsLimit = Field(description="Message usage vs limit")
     reset_info: ResetTimeInfo = Field(description="Reset time information")
     burn_rate: BurnRateInfo = Field(description="Current consumption rate")
-    model_distribution: Dict[str, float] = Field(
+    model_distribution: dict[str, float] = Field(
         default_factory=dict,
         description="Model usage distribution percentages"
     )
-    predictions: Dict[str, Optional[str]] = Field(
+    predictions: dict[str, str | None] = Field(
         default_factory=dict,
         description="Usage predictions (when tokens run out, etc.)"
     )

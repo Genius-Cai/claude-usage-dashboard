@@ -316,7 +316,7 @@ function transformDailyToUsageByPeriod(days: BackendHistoryDay[]): UsageByPeriod
 function transformToUsageByModel(models: BackendModelStats[]): UsageByModel[] {
   const colors = ['#3B82F6', '#6366F1', '#EC4899', '#10B981', '#F59E0B'];
   return models.map((model, index) => ({
-    model: model.model as any,
+    model: model.model as string,
     modelDisplayName: model.model.replace('claude-', '').replace(/-\d+$/, ''),
     tokens: {
       inputTokens: model.tokens?.input_tokens || 0,
