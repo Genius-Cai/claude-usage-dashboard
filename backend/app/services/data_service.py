@@ -5,10 +5,12 @@ and the API endpoints, providing processed data in API-friendly formats.
 """
 
 import logging
+import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from datetime import timezone as tz
 from functools import lru_cache
+from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 
 from claude_monitor.core.models import CostMode, UsageEntry
@@ -36,6 +38,49 @@ from app.models.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Cache TTL in seconds (10 seconds for real-time data)
+CACHE_TTL = 10
+
+
+class CacheEntry:
+    """Simple cache entry with TTL."""
+
+    def __init__(self, data: Any, ttl: int = CACHE_TTL) -> None:
+        self.data = data
+        self.expires_at = time.time() + ttl
+
+    def is_expired(self) -> bool:
+        return time.time() > self.expires_at
+
+
+class DataCache:
+    """Thread-safe in-memory cache with TTL."""
+
+    def __init__(self) -> None:
+        self._cache: Dict[str, CacheEntry] = {}
+        self._lock = Lock()
+
+    def get(self, key: str) -> Optional[Any]:
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry and not entry.is_expired():
+                return entry.data
+            elif entry:
+                del self._cache[key]
+            return None
+
+    def set(self, key: str, data: Any, ttl: int = CACHE_TTL) -> None:
+        with self._lock:
+            self._cache[key] = CacheEntry(data, ttl)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+
+# Global cache instance
+_data_cache = DataCache()
 
 
 class DataService:
@@ -70,6 +115,11 @@ class DataService:
         Returns:
             List of UsageEntry objects sorted by timestamp.
         """
+        cache_key = f"entries_{hours_back}"
+        cached = _data_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         try:
             entries, _ = load_usage_entries(
                 data_path=self.settings.CLAUDE_DATA_PATH,
@@ -77,6 +127,7 @@ class DataService:
                 mode=CostMode.AUTO,
                 include_raw=False,
             )
+            _data_cache.set(cache_key, entries)
             return entries
         except Exception as e:
             logger.error(f"Failed to load usage entries: {e}")
@@ -517,16 +568,22 @@ class DataService:
         )
 
         # Use analyze_usage to get proper session blocks (matches CLI)
-        try:
-            analysis_data = analyze_usage(
-                hours_back=self.session_window_hours * 2,  # Look back 2 windows
-                quick_start=False,
-                use_cache=False,
-                data_path=self.settings.CLAUDE_DATA_PATH,
-            )
-        except Exception as e:
-            logger.error(f"Failed to analyze usage: {e}")
-            analysis_data = None
+        # Cache this result as it's the most expensive operation
+        cache_key = f"analyze_{plan}_{self.session_window_hours}"
+        analysis_data = _data_cache.get(cache_key)
+
+        if analysis_data is None:
+            try:
+                analysis_data = analyze_usage(
+                    hours_back=self.session_window_hours * 2,  # Look back 2 windows
+                    quick_start=True,   # Like CLI - faster startup
+                    use_cache=True,     # Like CLI - use built-in cache
+                    data_path=self.settings.CLAUDE_DATA_PATH,
+                )
+                _data_cache.set(cache_key, analysis_data)
+            except Exception as e:
+                logger.error(f"Failed to analyze usage: {e}")
+                analysis_data = None
 
         # Find active session block
         active_block = None

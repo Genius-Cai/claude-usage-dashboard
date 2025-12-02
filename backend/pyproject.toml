@@ -44,8 +44,7 @@ dev = [
     "ruff>=0.1.0",
 ]
 
-[project.scripts]
-start = "uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+# Note: Use `uvicorn app.main:app --reload` directly instead of entry points
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
