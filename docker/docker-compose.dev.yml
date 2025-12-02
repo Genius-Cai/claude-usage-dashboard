@@ -1,0 +1,64 @@
+version: '3.8'
+
+# Development configuration with hot reload and volume mounts
+# Usage: docker compose -f docker/docker-compose.dev.yml up --build
+
+services:
+  # Next.js Frontend with Hot Reload
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile.dev
+      args:
+        - NODE_ENV=development
+    container_name: claude-dashboard-web-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ../src:/app/src:ro
+      - ../public:/app/public:ro
+      - ../package.json:/app/package.json:ro
+      - ../next.config.ts:/app/next.config.ts:ro
+      - ../tailwind.config.ts:/app/tailwind.config.ts:ro
+      - ../tsconfig.json:/app/tsconfig.json:ro
+      - ../components.json:/app/components.json:ro
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+    networks:
+      - claude-dev-network
+    stdin_open: true
+    tty: true
+
+  # FastAPI Backend with Auto-Reload
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      args:
+        - ENVIRONMENT=development
+    container_name: claude-dashboard-api-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - CLAUDE_DATA_PATH=/data
+      - DEBUG=true
+      - LOG_LEVEL=debug
+      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000","http://web:3000"]
+    volumes:
+      - ${CLAUDE_DATA_PATH:-~/.claude/projects}:/data:ro
+      - ../backend/app:/app/app:delegated
+    networks:
+      - claude-dev-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app
+
+networks:
+  claude-dev-network:
+    driver: bridge
