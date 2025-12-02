@@ -5,7 +5,7 @@ real-time statistics, daily summaries, and historical trends.
 """
 
 from datetime import date, datetime
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -96,7 +96,7 @@ async def get_realtime_usage(
 async def get_daily_stats(
     data_service: Annotated[DataService, Depends(get_data_service)],
     target_date: Annotated[
-        Optional[str],
+        str | None,
         Query(
             alias="date",
             description="Date in YYYY-MM-DD format. Defaults to today.",

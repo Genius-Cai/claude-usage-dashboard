@@ -11,12 +11,11 @@ from datetime import date, datetime, timedelta
 from datetime import timezone as tz
 from functools import lru_cache
 from threading import Lock
-from typing import Any, Dict, List, Optional, Tuple
 
 from claude_monitor.core.models import CostMode, UsageEntry
-from claude_monitor.core.plans import Plans, PlanType, PLAN_LIMITS
-from claude_monitor.data.reader import load_usage_entries
+from claude_monitor.core.plans import Plans, PlanType
 from claude_monitor.data.analysis import analyze_usage
+from claude_monitor.data.reader import load_usage_entries
 
 from app.core.config import Settings, get_settings
 from app.models.schemas import (
@@ -28,7 +27,6 @@ from app.models.schemas import (
     PlanLimits,
     PlanUsageResponse,
     ProjectStatsListResponse,
-    ProjectStatsResponse,
     RealtimeUsageResponse,
     ResetTimeInfo,
     SessionInfoResponse,
@@ -46,7 +44,7 @@ CACHE_TTL = 10
 class CacheEntry:
     """Simple cache entry with TTL."""
 
-    def __init__(self, data: Any, ttl: int = CACHE_TTL) -> None:
+    def __init__(self, data: object, ttl: int = CACHE_TTL) -> None:
         self.data = data
         self.expires_at = time.time() + ttl
 
@@ -58,10 +56,10 @@ class DataCache:
     """Thread-safe in-memory cache with TTL."""
 
     def __init__(self) -> None:
-        self._cache: Dict[str, CacheEntry] = {}
+        self._cache: dict[str, CacheEntry] = {}
         self._lock = Lock()
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> object | None:
         with self._lock:
             entry = self._cache.get(key)
             if entry and not entry.is_expired():
@@ -70,7 +68,7 @@ class DataCache:
                 del self._cache[key]
             return None
 
-    def set(self, key: str, data: Any, ttl: int = CACHE_TTL) -> None:
+    def set(self, key: str, data: object, ttl: int = CACHE_TTL) -> None:
         with self._lock:
             self._cache[key] = CacheEntry(data, ttl)
 
@@ -94,7 +92,7 @@ class DataService:
         session_window_hours: Duration of the rolling session window.
     """
 
-    def __init__(self, settings: Optional[Settings] = None) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
         """Initialize the data service.
 
         Args:
@@ -105,8 +103,8 @@ class DataService:
 
     def _load_entries(
         self,
-        hours_back: Optional[int] = None,
-    ) -> List[UsageEntry]:
+        hours_back: int | None = None,
+    ) -> list[UsageEntry]:
         """Load usage entries from the claude_monitor data reader.
 
         Args:
@@ -156,7 +154,7 @@ class DataService:
 
     def _calculate_token_breakdown(
         self,
-        entries: List[UsageEntry],
+        entries: list[UsageEntry],
     ) -> TokenBreakdown:
         """Calculate aggregated token breakdown from entries.
 
@@ -182,7 +180,7 @@ class DataService:
 
     def _calculate_session_info(
         self,
-        entries: List[UsageEntry],
+        entries: list[UsageEntry],
     ) -> SessionInfoResponse:
         """Calculate current session information based on rolling window.
 
@@ -257,7 +255,7 @@ class DataService:
 
     def _calculate_burn_rate(
         self,
-        entries: List[UsageEntry],
+        entries: list[UsageEntry],
         minutes_window: int = 30,
     ) -> BurnRateInfo:
         """Calculate current token consumption rate.
@@ -321,10 +319,10 @@ class DataService:
         ]
 
         tokens = self._calculate_token_breakdown(today_entries)
-        models = list(set(e.model for e in today_entries if e.model))
+        models = list({e.model for e in today_entries if e.model})
 
         # Calculate hourly distribution
-        hourly: Dict[int, int] = defaultdict(int)
+        hourly: dict[int, int] = defaultdict(int)
         for entry in today_entries:
             hour = entry.timestamp.hour
             hourly[hour] += 1
@@ -357,9 +355,9 @@ class DataService:
         date_entries = [e for e in entries if e.timestamp.date() == target_date]
 
         tokens = self._calculate_token_breakdown(date_entries)
-        models = list(set(e.model for e in date_entries if e.model))
+        models = list({e.model for e in date_entries if e.model})
 
-        hourly: Dict[int, int] = defaultdict(int)
+        hourly: dict[int, int] = defaultdict(int)
         for entry in date_entries:
             hourly[entry.timestamp.hour] += 1
 
@@ -384,18 +382,18 @@ class DataService:
         entries = self._load_entries(hours_back=days * 24)
 
         # Group entries by date
-        by_date: Dict[date, List[UsageEntry]] = defaultdict(list)
+        by_date: dict[date, list[UsageEntry]] = defaultdict(list)
         for entry in entries:
             by_date[entry.timestamp.date()].append(entry)
 
         # Build daily stats
-        daily_stats: List[DailyStatsResponse] = []
+        daily_stats: list[DailyStatsResponse] = []
         for day in sorted(by_date.keys()):
             day_entries = by_date[day]
             tokens = self._calculate_token_breakdown(day_entries)
-            models = list(set(e.model for e in day_entries if e.model))
+            models = list({e.model for e in day_entries if e.model})
 
-            hourly: Dict[int, int] = defaultdict(int)
+            hourly: dict[int, int] = defaultdict(int)
             for entry in day_entries:
                 hourly[entry.timestamp.hour] += 1
 
@@ -413,7 +411,7 @@ class DataService:
         total_tokens = sum(ds.tokens.total_tokens for ds in daily_stats)
         total_cost = sum(ds.total_cost_usd for ds in daily_stats)
 
-        date_range: Dict[str, Optional[str]] = {
+        date_range: dict[str, str | None] = {
             "start": daily_stats[0].date if daily_stats else None,
             "end": daily_stats[-1].date if daily_stats else None,
         }
@@ -447,7 +445,7 @@ class DataService:
             )
 
         # Group by model
-        by_model: Dict[str, List[UsageEntry]] = defaultdict(list)
+        by_model: dict[str, list[UsageEntry]] = defaultdict(list)
         for entry in entries:
             model_key = entry.model or "unknown"
             by_model[model_key].append(entry)
@@ -461,7 +459,7 @@ class DataService:
             for e in entries
         )
 
-        model_stats: List[ModelStatsResponse] = []
+        model_stats: list[ModelStatsResponse] = []
         for model, model_entries in by_model.items():
             tokens = self._calculate_token_breakdown(model_entries)
             percentage = (
@@ -672,13 +670,13 @@ class DataService:
         burn_rate = self._calculate_burn_rate(entries)
 
         # Model distribution from active block
-        model_distribution: Dict[str, float] = {}
+        model_distribution: dict[str, float] = {}
         if active_block and "modelDistribution" in active_block:
             model_distribution = active_block["modelDistribution"]
         elif active_block and analysis_data:
             # Calculate from entries if not in block
             entries = self._load_entries(hours_back=self.session_window_hours)
-            model_tokens: Dict[str, int] = defaultdict(int)
+            model_tokens: dict[str, int] = defaultdict(int)
             for entry in entries:
                 model = entry.model or "unknown"
                 model_tokens[model] += entry.input_tokens + entry.output_tokens
@@ -690,7 +688,7 @@ class DataService:
             }
 
         # Predictions
-        predictions: Dict[str, Optional[str]] = {
+        predictions: dict[str, str | None] = {
             "tokens_run_out": None,
             "limit_resets_at": reset_time.strftime("%I:%M %p") if reset_time else None,
         }
