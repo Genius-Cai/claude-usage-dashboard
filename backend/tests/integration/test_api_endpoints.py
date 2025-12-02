@@ -17,7 +17,8 @@ class TestHealthEndpoint:
 
         assert "status" in data
         assert "version" in data
-        assert data["status"] == "healthy"
+        # Status can be "healthy" or "degraded" depending on data path availability
+        assert data["status"] in ["healthy", "degraded"]
 
     @pytest.mark.asyncio
     async def test_health_includes_data_path_status(self, async_client: AsyncClient):
