@@ -1,239 +1,338 @@
 # Claude Usage Dashboard
 
-A modern, real-time web dashboard to monitor your Claude Code usage, costs, and sessions. Track your AI spending across different subscription plans with beautiful visualizations.
+<p align="center">
+  <img src="public/icons/icon-192x192.png" alt="Claude Usage Dashboard" width="80" />
+</p>
+
+<p align="center">
+  <strong>A modern, real-time web dashboard to monitor your Claude Code usage, costs, and sessions.</strong>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> |
+  <a href="#quick-start">Quick Start</a> |
+  <a href="#api-reference">API Reference</a> |
+  <a href="#deployment">Deployment</a> |
+  <a href="README_CN.md">中文文档</a>
+</p>
+
+---
 
 ## Features
 
-- **Real-time Usage Monitoring** - Track token usage and costs in USD/CNY
-- **Multi-Plan Support** - Pro, Max5, Max20, and Custom plan configurations
-- **Usage Analytics** - Historical trends, daily/weekly/monthly breakdowns
-- **Session Timer** - 5-hour rolling window usage tracker
-- **Cost Projections** - Estimate monthly costs based on current usage patterns
-- **PWA Support** - Install on iOS/Android for native-like experience
+### Real-Time Monitoring
+- **Live Usage Tracking** - Token consumption and costs updated in real-time via WebSocket
+- **Session Timer** - 5-hour rolling window countdown with visual progress
+- **Burn Rate** - Tokens/minute and cost/hour metrics
+- **Plan Limits** - Usage percentage against Pro/Max5/Max20 plan limits
+
+### Analytics & Visualization
+- **Usage Trends** - Interactive charts for daily/weekly/monthly patterns
+- **Model Distribution** - Pie charts showing usage across Claude models (Opus, Sonnet, Haiku)
+- **Token Breakdown** - Input/Output/Cache token visualization
+- **Historical Data** - Up to 365 days of usage history
+
+### User Experience
+- **Multi-Currency** - Display costs in USD or CNY with custom exchange rates
 - **Dark/Light Theme** - Automatic system theme detection
-- **Responsive Design** - Works on desktop, tablet, and mobile
-- **Real-time Updates** - WebSocket support for live data refresh
-- **Data Export** - Export usage data to CSV/JSON
+- **PWA Support** - Install on iOS/Android for native-like experience
+- **Responsive Design** - Optimized for desktop, tablet, and mobile
+- **Data Export** - Export usage data to CSV
+
+### Configuration
+- **Plan Selection** - Free, Pro, Max 5x, Max 20x tiers
+- **18+ Timezones** - Localized time display
+- **Notification Settings** - Usage warnings, session expiry alerts
+- **Display Preferences** - Compact mode, refresh intervals
+
+---
+
+## Screenshots
+
+| Dashboard | Sessions | Statistics |
+|-----------|----------|------------|
+| Real-time metrics with charts | 5-hour window visualization | Historical data analysis |
+
+---
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 20+
-- Python 3.11+
-- Docker & Docker Compose (for containerized deployment)
+- **Node.js** 20+ (for frontend)
+- **Python** 3.10+ (for backend)
+- **claude-monitor** package (v3.1.0+)
+- Docker & Docker Compose (optional, for containerized deployment)
 
-### Local Development
+### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/claude-usage-dashboard.git
+git clone https://github.com/Genius-Cai/claude-usage-dashboard.git
 cd claude-usage-dashboard
 
-# Install dependencies
+# Install all dependencies
 make install
 
-# Start development servers (API + Web)
+# Start development servers
 make dev
-
-# Or start individually:
-make dev-api   # Backend on http://localhost:8000
-make dev-web   # Frontend on http://localhost:3000
 ```
+
+**Access the dashboard:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
 ### Environment Setup
 
 ```bash
 # Copy example environment file
+cp .env.example .env.local
+
+# Required variables
+NEXT_PUBLIC_API_URL=http://localhost:8000/api
+```
+
+For the backend:
+```bash
+cd backend
 cp .env.example .env
 
-# Edit with your settings
-nano .env
+# Configure data path (default: ~/.claude/projects)
+CLAUDE_DATA_PATH=~/.claude/projects
 ```
 
-## Docker Deployment
-
-### Production Deployment
-
-```bash
-# Build production images
-make build
-
-# Deploy (starts all containers)
-make deploy
-
-# View logs
-make logs
-
-# Check status
-make status
-
-# Stop containers
-make stop
-```
-
-### Development with Docker
-
-```bash
-# Start development environment with hot reload
-make docker-dev
-
-# Or run in background
-make docker-dev-d
-```
-
-### Docker Services
-
-| Service | Port | Description |
-|---------|------|-------------|
-| nginx | 80, 443 | Reverse proxy |
-| web | 3000 | Next.js frontend |
-| api | 8000 | FastAPI backend |
-
-## Data Sync Setup (Mac to NUC)
-
-If you're running Claude Code on your Mac and hosting the dashboard on a NUC (or other server), use the sync script to keep data updated.
-
-### One-time Sync
-
-```bash
-# Configure remote settings in .env
-REMOTE_USER=user
-REMOTE_HOST=nuc.local
-REMOTE_PATH=~/claude-data
-
-# Run sync
-make sync
-# or
-./scripts/sync-data.sh
-```
-
-### Automated Sync (Cron)
-
-```bash
-# Edit crontab
-crontab -e
-
-# Add sync every 5 minutes
-*/5 * * * * /path/to/claude-usage-dashboard/scripts/sync-data.sh >> /var/log/claude-sync.log 2>&1
-```
-
-### Watch Mode
-
-```bash
-# Continuously sync every 5 minutes
-./scripts/sync-data.sh watch
-```
-
-## Remote Access Setup
-
-### Option 1: Tailscale (Recommended)
-
-Best for personal/team use. Creates a private mesh VPN.
-
-```bash
-# Run setup script
-make tunnel
-# or
-./scripts/setup-tunnel.sh tailscale
-
-# Access from any Tailscale device
-http://<tailscale-ip>
-```
-
-### Option 2: Cloudflare Tunnel
-
-Best for public access with a custom domain.
-
-```bash
-./scripts/setup-tunnel.sh cloudflare
-
-# Access via your domain
-https://claude.yourdomain.com
-```
-
-## Architecture
-
-```
-                                    +------------------+
-                                    |   iPhone/Browser |
-                                    +--------+---------+
-                                             |
-                                    +--------v---------+
-                                    |    Tailscale/    |
-                                    |    Cloudflare    |
-                                    +--------+---------+
-                                             |
-+-------------------+               +--------v---------+
-|   Mac (Claude)    |   rsync/SSH   |   NUC Server     |
-|                   | ------------> |                  |
-| ~/.claude/projects|               | +-------------+  |
-+-------------------+               | |   Docker    |  |
-                                    | | +---------+ |  |
-                                    | | |  nginx  | |  |
-                                    | | +----+----+ |  |
-                                    | |      |      |  |
-                                    | | +----v----+ |  |
-                                    | | |   web   | |  |
-                                    | | | Next.js | |  |
-                                    | | +----+----+ |  |
-                                    | |      |      |  |
-                                    | | +----v----+ |  |
-                                    | | |   api   | |  |
-                                    | | | FastAPI | |  |
-                                    | | +---------+ |  |
-                                    | +-------------+  |
-                                    +------------------+
-```
+---
 
 ## Tech Stack
 
 ### Frontend
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Components**: shadcn/ui
-- **Charts**: Recharts
-- **State**: Zustand + TanStack Query
+| Technology | Purpose |
+|------------|---------|
+| Next.js 16 | React framework with App Router |
+| TypeScript | Type safety |
+| Tailwind CSS v4 | Utility-first styling |
+| shadcn/ui | Accessible UI components |
+| TanStack Query v5 | Data fetching & caching |
+| Zustand | State management |
+| Recharts | Data visualization |
+| Framer Motion | Animations |
+| next-pwa | PWA support |
 
 ### Backend
-- **Framework**: FastAPI
-- **Language**: Python 3.11+
-- **Data**: File-based (Claude project files)
+| Technology | Purpose |
+|------------|---------|
+| FastAPI | High-performance API framework |
+| Python 3.10+ | Backend runtime |
+| Pydantic | Data validation |
+| claude-monitor | Usage data parsing |
+| WebSocket | Real-time updates |
 
 ### Infrastructure
-- **Containerization**: Docker & Docker Compose
-- **Reverse Proxy**: Nginx
-- **Tunneling**: Tailscale / Cloudflare Tunnel
+| Technology | Purpose |
+|------------|---------|
+| Docker | Containerization |
+| Nginx | Reverse proxy |
+| Tailscale/Cloudflare | Secure tunneling |
+
+---
 
 ## Project Structure
 
 ```
 claude-usage-dashboard/
-├── src/                    # Next.js source code
-│   ├── app/               # App router pages
-│   ├── components/        # React components
-│   ├── lib/               # Utilities and hooks
-│   └── styles/            # Global styles
-├── backend/               # FastAPI backend
-│   ├── app/
-│   │   ├── main.py       # FastAPI application
-│   │   ├── routers/      # API routes
-│   │   └── services/     # Business logic
-│   └── Dockerfile
-├── docker/                # Docker configuration
-│   ├── docker-compose.yml
-│   ├── docker-compose.dev.yml
-│   └── nginx.conf
-├── scripts/               # Utility scripts
-│   ├── sync-data.sh      # Data sync script
-│   └── setup-tunnel.sh   # Tunnel setup
-├── public/                # Static assets
-├── Dockerfile             # Production Dockerfile
-├── Dockerfile.dev         # Development Dockerfile
-├── Makefile              # Build automation
-└── README.md
+├── src/                          # Next.js frontend
+│   ├── app/                      # App Router pages
+│   │   ├── page.tsx              # Dashboard (Overview, Analytics, Models)
+│   │   ├── sessions/             # Session management
+│   │   ├── statistics/           # Historical analytics
+│   │   └── settings/             # User preferences
+│   ├── components/
+│   │   ├── ui/                   # shadcn/ui components
+│   │   ├── charts/               # Recharts visualizations
+│   │   ├── dashboard/            # Stats cards, timers, selectors
+│   │   └── layout/               # App shell, sidebar, header
+│   ├── hooks/                    # TanStack Query hooks
+│   ├── stores/                   # Zustand state
+│   ├── lib/                      # API client, utilities
+│   └── types/                    # TypeScript definitions
+├── backend/                      # FastAPI backend
+│   └── app/
+│       ├── main.py               # Application entry
+│       ├── core/config.py        # Settings management
+│       ├── routers/              # API endpoints
+│       │   ├── usage.py          # Usage data routes
+│       │   ├── stats.py          # Statistics routes
+│       │   └── websocket.py      # Real-time updates
+│       ├── services/             # Business logic
+│       └── models/               # Pydantic schemas
+├── docker/                       # Docker configuration
+├── scripts/                      # Utility scripts
+├── public/                       # Static assets & PWA icons
+├── Makefile                      # Build automation
+└── CLAUDE.md                     # AI assistant context
 ```
+
+---
+
+## API Reference
+
+### Usage Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/usage/realtime` | GET | Real-time usage with session info |
+| `/api/usage/daily?date=YYYY-MM-DD` | GET | Daily statistics |
+| `/api/usage/history?days=30` | GET | Historical data (max 365 days) |
+| `/api/usage/plan-usage?plan=max20` | GET | Plan usage vs limits |
+
+### Statistics Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/stats/models?days=30` | GET | Usage by model |
+| `/api/stats/projects` | GET | Usage by project |
+
+### WebSocket
+
+| Endpoint | Description |
+|----------|-------------|
+| `WS /ws/realtime` | Real-time data stream (10s interval) |
+
+**Message Types:**
+- `welcome` - Connection acknowledgment
+- `realtime_update` - Usage data broadcast
+- `pong` - Heartbeat response
+- `error` - Error notification
+
+### Health Check
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Service health status |
+
+---
+
+## Deployment
+
+### Docker Production
+
+```bash
+# Build images
+make build
+
+# Deploy
+make deploy
+
+# View logs
+make logs
+
+# Stop
+make stop
+```
+
+### Docker Development
+
+```bash
+# Start with hot reload
+make docker-dev
+```
+
+### Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| nginx | 80/443 | Reverse proxy |
+| web | 3000 | Next.js frontend |
+| api | 8000 | FastAPI backend |
+
+### Remote Access
+
+**Option 1: Tailscale (Recommended for personal use)**
+```bash
+make tunnel
+# Access: http://<tailscale-ip>
+```
+
+**Option 2: Cloudflare Tunnel (For public access)**
+```bash
+./scripts/setup-tunnel.sh cloudflare
+# Access: https://your-domain.com
+```
+
+---
+
+## Data Sync (Mac to Server)
+
+If running Claude Code on Mac and dashboard on a server:
+
+```bash
+# Configure in .env
+REMOTE_USER=user
+REMOTE_HOST=server.local
+REMOTE_PATH=~/claude-data
+
+# Manual sync
+make sync
+
+# Automated (crontab)
+*/5 * * * * /path/to/scripts/sync-data.sh
+```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Client (Browser/PWA)                     │
+│         Next.js + Zustand + TanStack Query + WebSocket      │
+└────────────────────────────┬────────────────────────────────┘
+                             │ HTTP / WebSocket
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Nginx Reverse Proxy                      │
+│                      (Port 80/443)                          │
+├─────────────────────────────────────────────────────────────┤
+│  /         → Next.js Frontend (3000)                        │
+│  /api      → FastAPI Backend (8000)                         │
+│  /ws       → WebSocket (8000)                               │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     FastAPI Backend                         │
+│           Routers → DataService → claude-monitor            │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  ~/.claude/projects/                        │
+│                    (Usage JSONL files)                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Environment Variables
+
+### Frontend (.env.local)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api` | Backend API URL |
+| `NEXT_PUBLIC_WS_URL` | `ws://localhost:8000/ws` | WebSocket URL |
+
+### Backend (.env)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLAUDE_DATA_PATH` | `~/.claude/projects` | Claude data directory |
+| `CORS_ORIGINS` | `["http://localhost:3000"]` | Allowed CORS origins |
+| `SESSION_WINDOW_HOURS` | `5` | Rolling session window |
+| `WEBSOCKET_BROADCAST_INTERVAL` | `10` | Broadcast interval (seconds) |
+| `LOG_LEVEL` | `INFO` | Logging level |
+| `DEBUG` | `False` | Debug mode |
+
+---
 
 ## Makefile Commands
 
@@ -245,81 +344,47 @@ make dev-web      # Start web only
 make install      # Install dependencies
 
 # Docker
-make docker-dev   # Start Docker dev environment
+make docker-dev   # Development with Docker
 make build        # Build production images
-make deploy       # Deploy to production
+make deploy       # Deploy containers
 make stop         # Stop containers
-make restart      # Restart containers
 make logs         # View logs
-make status       # Check container status
 
 # Utilities
 make sync         # Sync data to remote
 make tunnel       # Setup tunnel
-
-# Code Quality
 make lint         # Run linter
-make format       # Format code
-make test         # Run tests
-make check        # Run all checks
-
-# Cleanup
-make clean        # Clean all artifacts
-make clean-docker # Clean Docker resources
-make clean-deps   # Reinstall dependencies
-
-# Help
-make help         # Show all commands
+make clean        # Clean artifacts
 ```
 
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NODE_ENV` | `production` | Node environment |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | API endpoint |
-| `CLAUDE_DATA_PATH` | `~/.claude/projects` | Claude data directory |
-| `CORS_ORIGINS` | `["http://localhost:3000"]` | Allowed origins |
-| `LOG_LEVEL` | `info` | Logging level |
-| `NGINX_HTTP_PORT` | `80` | HTTP port |
-| `NGINX_HTTPS_PORT` | `443` | HTTPS port |
-
-See `.env.example` for full list.
+---
 
 ## Troubleshooting
 
-### Container Health Check Fails
-
+### API Connection Failed
 ```bash
-# Check container logs
+# Check backend is running
+curl http://localhost:8000/health
+
+# Check logs
 make logs-api
-make logs-web
-make logs-nginx
-
-# Restart specific service
-docker compose -f docker/docker-compose.yml restart api
 ```
 
-### Data Sync Issues
-
+### Data Not Loading
 ```bash
-# Check connectivity
-./scripts/sync-data.sh status
+# Verify Claude data path exists
+ls ~/.claude/projects/
 
-# View sync log
-tail -f ~/.claude-sync.log
+# Check data service
+python -c "from claude_monitor.data.reader import load_usage_entries; print(len(load_usage_entries()))"
 ```
 
-### Port Already in Use
+### WebSocket Disconnecting
+- Check `WEBSOCKET_BROADCAST_INTERVAL` setting
+- Verify CORS origins include your frontend URL
+- Check browser console for connection errors
 
-```bash
-# Find process using port
-lsof -i :3000
-lsof -i :8000
-
-# Kill process
-kill -9 <PID>
-```
+---
 
 ## Contributing
 
@@ -329,13 +394,24 @@ kill -9 <PID>
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+---
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
+---
+
 ## Acknowledgments
 
 - [Claude](https://www.anthropic.com/claude) by Anthropic
+- [claude-monitor](https://github.com/Genius-Cai/claude-monitor) - Usage data parsing
 - [Next.js](https://nextjs.org/) by Vercel
-- [shadcn/ui](https://ui.shadcn.com/) for beautiful components
-- [FastAPI](https://fastapi.tiangolo.com/) for the backend framework
+- [shadcn/ui](https://ui.shadcn.com/) - Beautiful components
+- [FastAPI](https://fastapi.tiangolo.com/) - Backend framework
+
+---
+
+<p align="center">
+  Made with Claude Code
+</p>
