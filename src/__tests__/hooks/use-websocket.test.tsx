@@ -3,11 +3,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
-// Mock WebSocket
+// Mock WebSocket - Store reference for tests
+let mockWsInstance: MockWebSocket | null = null;
+
 class MockWebSocket {
   static OPEN = 1;
   static CLOSED = 3;
@@ -21,46 +23,44 @@ class MockWebSocket {
 
   constructor(url: string) {
     this.url = url;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    mockWsInstance = self;
     // Simulate async connection
     setTimeout(() => {
-      if (this.onopen) {
-        this.onopen(new Event('open'));
+      if (self.onopen) {
+        self.onopen(new Event('open'));
       }
     }, 10);
   }
 
   send = vi.fn();
-  close = vi.fn(() => {
-    this.readyState = MockWebSocket.CLOSED;
-    if (this.onclose) {
-      this.onclose(new CloseEvent('close'));
+
+  close = vi.fn().mockImplementation(() => {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    self.readyState = MockWebSocket.CLOSED;
+    if (self.onclose) {
+      self.onclose(new CloseEvent('close'));
     }
   });
 
   // Helper to simulate receiving a message
-  simulateMessage(data: object) {
+  simulateMessage = (data: object) => {
     if (this.onmessage) {
       this.onmessage(new MessageEvent('message', { data: JSON.stringify(data) }));
     }
-  }
+  };
 
   // Helper to simulate error
-  simulateError() {
+  simulateError = () => {
     if (this.onerror) {
       this.onerror(new Event('error'));
     }
-  }
+  };
 }
 
-// Store reference to mock for tests
-let mockWsInstance: MockWebSocket | null = null;
-
-vi.stubGlobal('WebSocket', class extends MockWebSocket {
-  constructor(url: string) {
-    super(url);
-    mockWsInstance = this;
-  }
-});
+vi.stubGlobal('WebSocket', MockWebSocket);
 
 // Mock queryClient methods
 vi.mock('@tanstack/react-query', async (importOriginal) => {
@@ -241,7 +241,7 @@ describe('useWebSocket', () => {
     const { useWebSocket } = await import('@/hooks/use-websocket');
     const onSessionUpdate = vi.fn();
 
-    const { result } = renderHook(
+    renderHook(
       () => useWebSocket({ enabled: true, onSessionUpdate }),
       { wrapper: createWrapper() }
     );
@@ -281,7 +281,7 @@ describe('useWebSocket', () => {
     const { useWebSocket } = await import('@/hooks/use-websocket');
     const onLimitWarning = vi.fn();
 
-    const { result } = renderHook(
+    renderHook(
       () => useWebSocket({ enabled: true, onLimitWarning }),
       { wrapper: createWrapper() }
     );

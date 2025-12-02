@@ -3,32 +3,75 @@
 /**
  * Main Dashboard Page
  * Displays usage statistics, charts, and session information
+ *
+ * Performance optimizations:
+ * - Code splitting: Tab components loaded dynamically with next/dynamic
+ * - Conditional fetching: Data only fetched when tab is active (in tab components)
  */
 
 import * as React from 'react';
+import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import {
   Activity,
   Zap,
-  DollarSign,
   BarChart3,
-  Cpu,
-  TrendingUp,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import { Header } from '@/components/layout/header';
 import { CostCard } from '@/components/dashboard/cost-card';
 import { StatsCard, StatsCardWithProgress, StatsGrid } from '@/components/dashboard/stats-card';
-import { SessionTimer } from '@/components/dashboard/session-timer';
-import { PlanUsageCard } from '@/components/dashboard/plan-usage-card';
-import { UsageTrendChart, TokenComparisonChart } from '@/components/charts/usage-trend';
-import { ModelDistributionChart, ModelUsageList } from '@/components/charts/model-distribution';
-import { TokenBreakdownChart, TokenBar } from '@/components/charts/token-breakdown';
-import { useDashboard, useUsageByPeriod, useUsageByModel } from '@/hooks/use-usage-data';
+import { useDashboard } from '@/hooks/use-usage-data';
 import { useSettingsStore } from '@/stores/settings-store';
 import { PLAN_CONFIGS } from '@/types';
+
+// Dynamic imports for tab components (code splitting)
+const OverviewTab = dynamic(
+  () => import('./tabs/overview-tab').then((mod) => ({ default: mod.OverviewTab })),
+  {
+    loading: () => <TabLoadingSkeleton />,
+    ssr: false,
+  }
+);
+
+const AnalyticsTab = dynamic(
+  () => import('./tabs/analytics-tab').then((mod) => ({ default: mod.AnalyticsTab })),
+  {
+    loading: () => <TabLoadingSkeleton />,
+    ssr: false,
+  }
+);
+
+const ModelsTab = dynamic(
+  () => import('./tabs/models-tab').then((mod) => ({ default: mod.ModelsTab })),
+  {
+    loading: () => <TabLoadingSkeleton />,
+    ssr: false,
+  }
+);
+
+/**
+ * Loading skeleton for tab content
+ */
+function TabLoadingSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Skeleton className="h-[300px]" />
+        <div className="lg:col-span-2 space-y-6">
+          <Skeleton className="h-[120px]" />
+          <Skeleton className="h-[250px]" />
+        </div>
+      </div>
+      <Skeleton className="h-[100px]" />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Skeleton className="h-[300px]" />
+        <Skeleton className="h-[300px]" />
+      </div>
+    </div>
+  );
+}
 
 /**
  * Loading skeleton for dashboard
@@ -87,10 +130,10 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 export default function Dashboard() {
   const [activeTab, setActiveTab] = React.useState('overview');
 
-  const { plan, formatCurrency } = useSettingsStore();
+  const { plan } = useSettingsStore();
   const planConfig = PLAN_CONFIGS[plan];
 
-  // Fetch dashboard data
+  // Fetch dashboard data (core data only, chart data loaded in tab components)
   const {
     data: dashboardData,
     session,
@@ -101,11 +144,6 @@ export default function Dashboard() {
     refresh,
     isRefreshing,
   } = useDashboard();
-
-  // Fetch chart data
-  const { data: usageByDay = [] } = useUsageByPeriod({ groupBy: 'day' });
-  const { data: usageByHour = [] } = useUsageByPeriod({ groupBy: 'hour' });
-  const { data: usageByModel = [] } = useUsageByModel();
 
   // Animation variants
   const containerVariants = {
@@ -221,175 +259,27 @@ export default function Dashboard() {
                 <TabsTrigger value="models">Models</TabsTrigger>
               </TabsList>
 
-              {/* Overview Tab */}
+              {/* Overview Tab - Loaded dynamically */}
               <TabsContent value="overview" className="space-y-6">
-                {/* Plan Usage & Session Row */}
-                <div className="grid gap-6 lg:grid-cols-3">
-                  <PlanUsageCard
-                    plan="max20"
-                    className="lg:col-span-1"
+                {activeTab === 'overview' && (
+                  <OverviewTab
+                    session={session ?? null}
+                    todayStats={todayStats}
+                    onRefresh={refresh}
                   />
-
-                  <div className="lg:col-span-2 space-y-6">
-                    <SessionTimer
-                      session={session ?? null}
-                      onRefresh={refresh}
-                    />
-                    <UsageTrendChart
-                      data={dashboardData?.usageByHour || usageByHour}
-                      title="Today's Usage Trend"
-                    />
-                  </div>
-                </div>
-
-                {/* Token Breakdown */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Token Breakdown</h3>
-                  <TokenBar
-                    tokens={{
-                      inputTokens: todayStats?.inputTokens || 0,
-                      outputTokens: todayStats?.outputTokens || 0,
-                      cacheCreationInputTokens: 0,
-                      cacheReadInputTokens: todayStats?.cacheTokens || 0,
-                      totalTokens: todayStats?.totalTokens || 0,
-                    }}
-                  />
-                </div>
-
-                {/* Model Distribution */}
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <ModelDistributionChart
-                    data={dashboardData?.usageByModel || usageByModel}
-                    title="Model Usage Distribution"
-                  />
-
-                  <ModelUsageList
-                    data={dashboardData?.usageByModel || usageByModel}
-                  />
-                </div>
+                )}
               </TabsContent>
 
-              {/* Analytics Tab */}
+              {/* Analytics Tab - Loaded dynamically */}
               <TabsContent value="analytics" className="space-y-6">
-                {/* Weekly Stats */}
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <StatsCard
-                    title="Week Cost"
-                    value={formatCurrency(weekStats?.totalCost || 0)}
-                    icon={DollarSign}
-                    trend={{
-                      value: -5.2,
-                      direction: 'down',
-                      label: 'vs last week',
-                    }}
-                  />
-                  <StatsCard
-                    title="Week Tokens"
-                    value={weekStats?.totalTokens || 0}
-                    icon={Zap}
-                  />
-                  <StatsCard
-                    title="Week Requests"
-                    value={weekStats?.requestCount || 0}
-                    icon={Activity}
-                  />
-                  <StatsCard
-                    title="Avg Cost/Request"
-                    value={formatCurrency(weekStats?.averageCostPerRequest || 0)}
-                    icon={TrendingUp}
-                  />
-                </div>
-
-                {/* Charts */}
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <UsageTrendChart
-                    data={dashboardData?.usageByDay || usageByDay}
-                    title="Weekly Usage Trend"
-                  />
-                  <TokenBreakdownChart
-                    data={dashboardData?.usageByDay || usageByDay}
-                    title="Token Breakdown by Day"
-                  />
-                </div>
-
-                <TokenComparisonChart
-                  data={dashboardData?.usageByDay || usageByDay}
-                />
+                {activeTab === 'analytics' && (
+                  <AnalyticsTab weekStats={weekStats} />
+                )}
               </TabsContent>
 
-              {/* Models Tab */}
+              {/* Models Tab - Loaded dynamically */}
               <TabsContent value="models" className="space-y-6">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {(dashboardData?.usageByModel || usageByModel).map((model) => (
-                    <motion.div
-                      key={model.model}
-                      variants={itemVariants}
-                      className="rounded-lg border p-4 space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Cpu
-                            className="h-5 w-5"
-                            style={{ color: model.color }}
-                          />
-                          <span className="font-medium">
-                            {model.modelDisplayName}
-                          </span>
-                        </div>
-                        <Badge variant="secondary">
-                          {(model.percentage ?? 0).toFixed(0)}%
-                        </Badge>
-                      </div>
-
-                      <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${model.percentage ?? 0}%`,
-                            backgroundColor: model.color,
-                          }}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Tokens</span>
-                          <p className="font-medium">
-                            {((model.tokens?.totalTokens ?? 0) / 1000).toFixed(1)}K
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Cost</span>
-                          <p className="font-medium">
-                            {formatCurrency(model.cost?.totalCost ?? 0)}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Input</span>
-                          <p className="font-medium">
-                            {((model.tokens?.inputTokens ?? 0) / 1000).toFixed(1)}K
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Output</span>
-                          <p className="font-medium">
-                            {((model.tokens?.outputTokens ?? 0) / 1000).toFixed(1)}K
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="pt-2 border-t text-sm text-muted-foreground">
-                        {model.requestCount} requests
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                <ModelDistributionChart
-                  data={dashboardData?.usageByModel || usageByModel}
-                  title="Cost Distribution by Model"
-                  metric="cost"
-                />
+                {activeTab === 'models' && <ModelsTab />}
               </TabsContent>
             </Tabs>
           </motion.div>
