@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://claude-usage-dashboard.vercel.app">
+  <a href="https://claude-usage.geniuscai.com">
     <img src="https://img.shields.io/badge/Live%20Demo-Visit-blue?style=for-the-badge&logo=vercel" alt="Live Demo" />
   </a>
   &nbsp;
@@ -62,7 +62,7 @@
 
 **Try the dashboard instantly** - no backend required!
 
-**[View Live Demo](https://claude-usage-dashboard.vercel.app)**
+**[View Live Demo](https://claude-usage.geniuscai.com)**
 
 The demo runs entirely in your browser using mock data, showcasing all features:
 - Real-time usage tracking simulation
