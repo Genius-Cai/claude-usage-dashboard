@@ -537,3 +537,64 @@ export interface PaginatedResponse<T> {
   hasNext: boolean;
   hasPrevious: boolean;
 }
+
+// ============================================================================
+// Plan Usage API Types (matching backend PlanUsageResponse)
+// ============================================================================
+
+/**
+ * Plan limits configuration from API
+ */
+export interface ApiPlanLimits {
+  plan: string;
+  display_name: string;
+  token_limit: number;
+  cost_limit: number;
+  message_limit: number;
+}
+
+/**
+ * Usage vs limit data
+ */
+export interface UsageVsLimit {
+  current: number;
+  limit: number;
+  percentage: number;
+  formatted_current: string;
+  formatted_limit: string;
+}
+
+/**
+ * Reset time information
+ */
+export interface ResetTimeInfo {
+  reset_time: string;
+  remaining_minutes: number;
+  remaining_formatted: string;
+}
+
+/**
+ * Burn rate information
+ */
+export interface BurnRateInfo {
+  tokens_per_minute: number;
+  cost_per_hour: number;
+}
+
+/**
+ * Complete plan usage response matching claude-monitor CLI output
+ */
+export interface PlanUsageResponse {
+  timestamp: string;
+  plan: ApiPlanLimits;
+  cost_usage: UsageVsLimit;
+  token_usage: UsageVsLimit;
+  message_usage: UsageVsLimit;
+  reset_info: ResetTimeInfo;
+  burn_rate: BurnRateInfo;
+  model_distribution: Record<string, number>;
+  predictions: {
+    tokens_run_out: string | null;
+    limit_resets_at: string | null;
+  };
+}

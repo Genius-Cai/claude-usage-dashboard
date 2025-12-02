@@ -6,3 +6,4 @@ export * from './cost-card';
 export * from './stats-card';
 export * from './plan-selector';
 export * from './session-timer';
+export * from './plan-usage-card';

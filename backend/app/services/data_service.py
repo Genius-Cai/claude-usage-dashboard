@@ -12,6 +12,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 from claude_monitor.core.models import CostMode, UsageEntry
+from claude_monitor.core.plans import Plans, PlanType, PLAN_LIMITS
 from claude_monitor.data.reader import load_usage_entries
 
 from app.core.config import Settings, get_settings
@@ -21,12 +22,16 @@ from app.models.schemas import (
     HistoryResponse,
     ModelStatsListResponse,
     ModelStatsResponse,
+    PlanLimits,
+    PlanUsageResponse,
     ProjectStatsListResponse,
     ProjectStatsResponse,
     RealtimeUsageResponse,
+    ResetTimeInfo,
     SessionInfoResponse,
     TokenBreakdown,
     UsageEntryResponse,
+    UsageVsLimit,
 )
 
 logger = logging.getLogger(__name__)
@@ -481,6 +486,136 @@ class DataService:
             today_stats=today_stats,
             burn_rate=burn_rate,
             recent_entries=recent_entries,
+        )
+
+    def get_plan_usage(self, plan: str = "max20") -> PlanUsageResponse:
+        """Get real-time usage compared to plan limits.
+
+        This matches the claude-monitor CLI output format.
+
+        Args:
+            plan: Plan type (pro, max5, max20, custom)
+
+        Returns:
+            PlanUsageResponse with usage vs limits
+        """
+        now = datetime.now(tz.utc)
+
+        # Load entries for the session window (5 hours)
+        entries = self._load_entries(hours_back=self.session_window_hours + 1)
+
+        # Get plan configuration
+        plan_config = Plans.get_plan_by_name(plan)
+        if plan_config is None:
+            plan_config = Plans.get_plan(PlanType.MAX20)
+
+        plan_limits = PlanLimits(
+            plan=plan_config.name,
+            display_name=plan_config.display_name,
+            token_limit=plan_config.token_limit,
+            cost_limit=plan_config.cost_limit,
+            message_limit=plan_config.message_limit,
+        )
+
+        # Calculate session window
+        window_start = now - timedelta(hours=self.session_window_hours)
+        window_entries = [e for e in entries if e.timestamp >= window_start]
+
+        # Calculate current usage in window
+        total_cost = sum(e.cost_usd for e in window_entries)
+        total_tokens = sum(
+            e.input_tokens + e.output_tokens
+            for e in window_entries
+        )
+        total_messages = len(window_entries)
+
+        # Calculate percentages
+        cost_pct = min(100.0, (total_cost / plan_config.cost_limit * 100) if plan_config.cost_limit > 0 else 0)
+        token_pct = min(100.0, (total_tokens / plan_config.token_limit * 100) if plan_config.token_limit > 0 else 0)
+        msg_pct = min(100.0, (total_messages / plan_config.message_limit * 100) if plan_config.message_limit > 0 else 0)
+
+        # Format values
+        cost_usage = UsageVsLimit(
+            current=total_cost,
+            limit=plan_config.cost_limit,
+            percentage=round(cost_pct, 1),
+            formatted_current=f"${total_cost:.2f}",
+            formatted_limit=f"${plan_config.cost_limit:.2f}",
+        )
+
+        token_usage = UsageVsLimit(
+            current=float(total_tokens),
+            limit=float(plan_config.token_limit),
+            percentage=round(token_pct, 1),
+            formatted_current=f"{total_tokens:,}",
+            formatted_limit=f"{plan_config.token_limit:,}",
+        )
+
+        message_usage = UsageVsLimit(
+            current=float(total_messages),
+            limit=float(plan_config.message_limit),
+            percentage=round(msg_pct, 1),
+            formatted_current=str(total_messages),
+            formatted_limit=str(plan_config.message_limit),
+        )
+
+        # Calculate reset time (5 hours from first entry in window, or next hour boundary)
+        if window_entries:
+            first_entry = min(window_entries, key=lambda e: e.timestamp)
+            reset_time = first_entry.timestamp + timedelta(hours=self.session_window_hours)
+        else:
+            # No activity - reset at next hour boundary
+            reset_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+        remaining = max(timedelta(0), reset_time - now)
+        remaining_minutes = remaining.total_seconds() / 60
+        hours = int(remaining_minutes // 60)
+        minutes = int(remaining_minutes % 60)
+        remaining_formatted = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+
+        reset_info = ResetTimeInfo(
+            reset_time=reset_time,
+            remaining_minutes=remaining_minutes,
+            remaining_formatted=remaining_formatted,
+        )
+
+        # Calculate burn rate
+        burn_rate = self._calculate_burn_rate(entries)
+
+        # Model distribution
+        model_tokens: Dict[str, int] = defaultdict(int)
+        for entry in window_entries:
+            model = entry.model or "unknown"
+            model_tokens[model] += entry.input_tokens + entry.output_tokens
+
+        total_model_tokens = sum(model_tokens.values())
+        model_distribution = {
+            model: round((tokens / total_model_tokens * 100), 1) if total_model_tokens > 0 else 0.0
+            for model, tokens in sorted(model_tokens.items(), key=lambda x: x[1], reverse=True)
+        }
+
+        # Predictions
+        predictions: Dict[str, Optional[str]] = {
+            "tokens_run_out": None,
+            "limit_resets_at": reset_time.strftime("%I:%M %p") if reset_time else None,
+        }
+
+        if burn_rate.tokens_per_minute > 0 and total_tokens < plan_config.token_limit:
+            remaining_tokens = plan_config.token_limit - total_tokens
+            minutes_until_exhausted = remaining_tokens / burn_rate.tokens_per_minute
+            exhaustion_time = now + timedelta(minutes=minutes_until_exhausted)
+            predictions["tokens_run_out"] = exhaustion_time.strftime("%I:%M %p")
+
+        return PlanUsageResponse(
+            timestamp=now,
+            plan=plan_limits,
+            cost_usage=cost_usage,
+            token_usage=token_usage,
+            message_usage=message_usage,
+            reset_info=reset_info,
+            burn_rate=burn_rate,
+            model_distribution=model_distribution,
+            predictions=predictions,
         )
 
 

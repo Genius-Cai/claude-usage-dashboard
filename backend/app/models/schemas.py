@@ -286,3 +286,51 @@ class ErrorResponse(BaseModel):
         default=None,
         description="Additional error details"
     )
+
+
+class PlanLimits(BaseModel):
+    """Plan limit configuration."""
+
+    plan: str = Field(description="Plan name (pro, max5, max20, custom)")
+    display_name: str = Field(description="Display name for the plan")
+    token_limit: int = Field(ge=0, description="Token limit for the plan")
+    cost_limit: float = Field(ge=0.0, description="Cost limit in USD")
+    message_limit: int = Field(ge=0, description="Message limit for the plan")
+
+
+class UsageVsLimit(BaseModel):
+    """Current usage compared to plan limits."""
+
+    current: float = Field(description="Current usage value")
+    limit: float = Field(description="Plan limit value")
+    percentage: float = Field(ge=0.0, le=100.0, description="Usage percentage")
+    formatted_current: str = Field(description="Formatted current value")
+    formatted_limit: str = Field(description="Formatted limit value")
+
+
+class ResetTimeInfo(BaseModel):
+    """Information about when limits reset."""
+
+    reset_time: datetime = Field(description="When limits will reset")
+    remaining_minutes: float = Field(ge=0.0, description="Minutes until reset")
+    remaining_formatted: str = Field(description="Human-readable remaining time")
+
+
+class PlanUsageResponse(BaseModel):
+    """Complete plan usage status matching claude-monitor CLI output."""
+
+    timestamp: datetime = Field(description="Timestamp of this snapshot")
+    plan: PlanLimits = Field(description="Current plan configuration")
+    cost_usage: UsageVsLimit = Field(description="Cost usage vs limit")
+    token_usage: UsageVsLimit = Field(description="Token usage vs limit")
+    message_usage: UsageVsLimit = Field(description="Message usage vs limit")
+    reset_info: ResetTimeInfo = Field(description="Reset time information")
+    burn_rate: BurnRateInfo = Field(description="Current consumption rate")
+    model_distribution: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Model usage distribution percentages"
+    )
+    predictions: Dict[str, Optional[str]] = Field(
+        default_factory=dict,
+        description="Usage predictions (when tokens run out, etc.)"
+    )

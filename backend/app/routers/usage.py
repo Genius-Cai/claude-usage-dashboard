@@ -13,6 +13,7 @@ from app.models.schemas import (
     DailyStatsResponse,
     ErrorResponse,
     HistoryResponse,
+    PlanUsageResponse,
     RealtimeUsageResponse,
 )
 from app.services.data_service import DataService, get_data_service
@@ -186,4 +187,59 @@ async def get_history(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve history: {str(e)}",
+        ) from e
+
+
+@router.get(
+    "/plan-usage",
+    response_model=PlanUsageResponse,
+    summary="Get Plan Usage vs Limits",
+    description="""
+    Retrieve current usage compared to plan limits.
+
+    This matches the claude-monitor CLI output format, showing:
+    - Cost usage vs limit with percentage
+    - Token usage vs limit with percentage
+    - Message usage vs limit with percentage
+    - Time until limits reset
+    - Burn rate (consumption rate)
+    - Model distribution
+    - Predictions (when tokens will run out)
+
+    Available plans: pro, max5, max20, custom
+    """,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Plan usage data retrieved successfully",
+        },
+    },
+)
+async def get_plan_usage(
+    data_service: Annotated[DataService, Depends(get_data_service)],
+    plan: Annotated[
+        str,
+        Query(
+            description="Plan type (pro, max5, max20, custom). Defaults to max20.",
+            examples=["max20", "pro", "max5"],
+        ),
+    ] = "max20",
+) -> PlanUsageResponse:
+    """Get current usage compared to plan limits.
+
+    Args:
+        data_service: Injected data service instance.
+        plan: Plan type to check usage against.
+
+    Returns:
+        PlanUsageResponse with usage vs limits data.
+
+    Raises:
+        HTTPException: If data retrieval fails.
+    """
+    try:
+        return data_service.get_plan_usage(plan)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve plan usage: {str(e)}",
         ) from e

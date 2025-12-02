@@ -16,13 +16,14 @@ import type {
   PaginatedResponse,
   PlanUsage,
   CurrentSession,
+  PlanUsageResponse,
 } from '@/types';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 const API_TIMEOUT = 30000; // 30 seconds
 
 // ============================================================================
@@ -149,6 +150,14 @@ export async function fetchCurrentSession(): Promise<CurrentSession | null> {
  */
 export async function fetchPlanUsage(): Promise<PlanUsage> {
   return apiRequest<PlanUsage>('/plan/usage');
+}
+
+/**
+ * Fetch real-time plan usage vs limits (matching claude-monitor CLI)
+ * @param plan - Plan type (pro, max5, max20, custom). Defaults to max20.
+ */
+export async function fetchPlanUsageRealtime(plan: string = 'max20'): Promise<PlanUsageResponse> {
+  return apiRequest<PlanUsageResponse>(`/usage/plan-usage?plan=${plan}`);
 }
 
 // ============================================================================
@@ -479,12 +488,14 @@ export const api = {
     fetch: fetchDashboardData,
     fetchCurrentSession,
     fetchPlanUsage,
+    fetchPlanUsageRealtime,
   },
   usage: {
     fetchStats: fetchUsageStats,
     fetchRecords: fetchUsageRecords,
     fetchByPeriod: fetchUsageByPeriod,
     fetchByModel: fetchUsageByModel,
+    fetchPlanUsageRealtime,
   },
   sessions: {
     fetch: fetchSessions,

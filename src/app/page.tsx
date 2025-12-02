@@ -22,6 +22,7 @@ import { Header } from '@/components/layout/header';
 import { CostCard } from '@/components/dashboard/cost-card';
 import { StatsCard, StatsCardWithProgress, StatsGrid } from '@/components/dashboard/stats-card';
 import { SessionTimer } from '@/components/dashboard/session-timer';
+import { PlanUsageCard } from '@/components/dashboard/plan-usage-card';
 import { UsageTrendChart, TokenComparisonChart } from '@/components/charts/usage-trend';
 import { ModelDistributionChart, ModelUsageList } from '@/components/charts/model-distribution';
 import { TokenBreakdownChart, TokenBar } from '@/components/charts/token-breakdown';
@@ -222,15 +223,18 @@ export default function Dashboard() {
 
               {/* Overview Tab */}
               <TabsContent value="overview" className="space-y-6">
-                {/* Session & Cost Row */}
+                {/* Plan Usage & Session Row */}
                 <div className="grid gap-6 lg:grid-cols-3">
-                  <SessionTimer
-                    session={session ?? null}
-                    onRefresh={refresh}
+                  <PlanUsageCard
+                    plan="max20"
                     className="lg:col-span-1"
                   />
 
-                  <div className="lg:col-span-2">
+                  <div className="lg:col-span-2 space-y-6">
+                    <SessionTimer
+                      session={session ?? null}
+                      onRefresh={refresh}
+                    />
                     <UsageTrendChart
                       data={dashboardData?.usageByHour || usageByHour}
                       title="Today's Usage Trend"

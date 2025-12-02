@@ -16,6 +16,7 @@ import type {
   Session,
   CurrentSession,
   PlanUsage,
+  PlanUsageResponse,
   UsageFilter,
   PaginationOptions,
 } from '@/types';
@@ -29,6 +30,7 @@ export const queryKeys = {
   dashboard: () => [...queryKeys.all, 'dashboard'] as const,
   currentSession: () => [...queryKeys.all, 'currentSession'] as const,
   planUsage: () => [...queryKeys.all, 'planUsage'] as const,
+  planUsageRealtime: (plan: string) => [...queryKeys.all, 'planUsageRealtime', plan] as const,
   stats: (period: string) => [...queryKeys.all, 'stats', period] as const,
   byPeriod: (groupBy: string, start?: string, end?: string) =>
     [...queryKeys.all, 'byPeriod', groupBy, start, end] as const,
@@ -137,6 +139,38 @@ export function usePlanUsage() {
       return api.dashboard.fetchPlanUsage();
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+// ============================================================================
+// Plan Usage Realtime Hook (matching claude-monitor CLI)
+// ============================================================================
+
+interface UsePlanUsageRealtimeOptions {
+  plan?: string;
+  refetchInterval?: number;
+  enabled?: boolean;
+}
+
+/**
+ * Hook for fetching real-time plan usage vs limits
+ * This matches the claude-monitor CLI output format
+ */
+export function usePlanUsageRealtime(options: UsePlanUsageRealtimeOptions = {}) {
+  const { display } = useSettingsStore();
+  const {
+    plan = 'max20',
+    refetchInterval = display.refreshInterval * 1000,
+    enabled = true,
+  } = options;
+
+  return useQuery<PlanUsageResponse, ApiError>({
+    queryKey: queryKeys.planUsageRealtime(plan),
+    queryFn: () => api.dashboard.fetchPlanUsageRealtime(plan),
+    refetchInterval,
+    enabled,
+    staleTime: 10 * 1000, // 10 seconds
+    retry: 3,
   });
 }
 
