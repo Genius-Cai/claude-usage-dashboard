@@ -6,7 +6,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, generateMockDashboardData, ApiError } from '@/lib/api';
+import { api, generateMockDashboardData, generateMockPlanUsageResponse, ApiError } from '@/lib/api';
 import { useSettingsStore } from '@/stores/settings-store';
 import type {
   DashboardData,
@@ -166,7 +166,13 @@ export function usePlanUsageRealtime(options: UsePlanUsageRealtimeOptions = {}) 
 
   return useQuery<PlanUsageResponse, ApiError>({
     queryKey: queryKeys.planUsageRealtime(plan),
-    queryFn: () => api.dashboard.fetchPlanUsageRealtime(plan),
+    queryFn: async () => {
+      if (USE_MOCK_DATA) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return generateMockPlanUsageResponse();
+      }
+      return api.dashboard.fetchPlanUsageRealtime(plan);
+    },
     refetchInterval,
     enabled,
     staleTime: 10 * 1000, // 10 seconds

@@ -12,6 +12,7 @@ import type {
   CurrentSession,
   PlanUsage,
   PlanUsageResponse,
+  ModelId,
 } from '@/types';
 
 // ============================================================================
@@ -316,7 +317,7 @@ function transformDailyToUsageByPeriod(days: BackendHistoryDay[]): UsageByPeriod
 function transformToUsageByModel(models: BackendModelStats[]): UsageByModel[] {
   const colors = ['#3B82F6', '#6366F1', '#EC4899', '#10B981', '#F59E0B'];
   return models.map((model, index) => ({
-    model: model.model as string,
+    model: model.model as ModelId,
     modelDisplayName: model.model.replace('claude-', '').replace(/-\d+$/, ''),
     tokens: {
       inputTokens: model.tokens?.input_tokens || 0,
@@ -464,6 +465,162 @@ export async function checkApiHealth(): Promise<{ status: string; timestamp: str
 
 export function generateMockDashboardData(): DashboardData {
   const now = new Date();
+
+  // Generate hourly usage data (last 24 hours)
+  const usageByHour: UsageByPeriod[] = Array.from({ length: 24 }, (_, i) => {
+    const hour = (now.getHours() - 23 + i + 24) % 24;
+    const baseRequests = Math.floor(Math.random() * 15) + 2;
+    const baseTokens = baseRequests * (Math.floor(Math.random() * 3000) + 1500);
+    return {
+      period: `${String(hour).padStart(2, '0')}:00`,
+      tokens: {
+        inputTokens: Math.floor(baseTokens * 0.4),
+        outputTokens: Math.floor(baseTokens * 0.5),
+        cacheCreationInputTokens: Math.floor(baseTokens * 0.05),
+        cacheReadInputTokens: Math.floor(baseTokens * 0.05),
+        totalTokens: baseTokens,
+      },
+      cost: {
+        inputCost: baseTokens * 0.000003,
+        outputCost: baseTokens * 0.000015,
+        cacheCreationCost: 0,
+        cacheReadCost: 0,
+        totalCost: baseTokens * 0.000018,
+      },
+      requestCount: baseRequests,
+    };
+  });
+
+  // Generate daily usage data (last 7 days)
+  const usageByDay: UsageByPeriod[] = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(now);
+    date.setDate(date.getDate() - 6 + i);
+    const baseRequests = Math.floor(Math.random() * 80) + 40;
+    const baseTokens = baseRequests * (Math.floor(Math.random() * 4000) + 2000);
+    return {
+      period: date.toISOString().split('T')[0],
+      tokens: {
+        inputTokens: Math.floor(baseTokens * 0.4),
+        outputTokens: Math.floor(baseTokens * 0.5),
+        cacheCreationInputTokens: Math.floor(baseTokens * 0.05),
+        cacheReadInputTokens: Math.floor(baseTokens * 0.05),
+        totalTokens: baseTokens,
+      },
+      cost: {
+        inputCost: baseTokens * 0.000003,
+        outputCost: baseTokens * 0.000015,
+        cacheCreationCost: 0,
+        cacheReadCost: 0,
+        totalCost: baseTokens * 0.000018,
+      },
+      requestCount: baseRequests,
+    };
+  });
+
+  // Generate model usage data
+  const usageByModel: UsageByModel[] = [
+    {
+      model: 'claude-sonnet-4' as ModelId,
+      modelDisplayName: 'Claude Sonnet 4',
+      tokens: {
+        inputTokens: 180000,
+        outputTokens: 270000,
+        cacheCreationInputTokens: 15000,
+        cacheReadInputTokens: 25000,
+        totalTokens: 490000,
+      },
+      cost: {
+        inputCost: 0.54,
+        outputCost: 4.05,
+        cacheCreationCost: 0,
+        cacheReadCost: 0,
+        totalCost: 4.59,
+      },
+      requestCount: 89,
+      percentage: 45.2,
+      color: '#3B82F6',
+    },
+    {
+      model: 'claude-opus-4' as ModelId,
+      modelDisplayName: 'Claude Opus 4',
+      tokens: {
+        inputTokens: 85000,
+        outputTokens: 120000,
+        cacheCreationInputTokens: 8000,
+        cacheReadInputTokens: 12000,
+        totalTokens: 225000,
+      },
+      cost: {
+        inputCost: 1.28,
+        outputCost: 9.0,
+        cacheCreationCost: 0,
+        cacheReadCost: 0,
+        totalCost: 10.28,
+      },
+      requestCount: 34,
+      percentage: 28.5,
+      color: '#6366F1',
+    },
+    {
+      model: 'claude-3.5-sonnet' as ModelId,
+      modelDisplayName: 'Claude 3.5 Sonnet',
+      tokens: {
+        inputTokens: 60000,
+        outputTokens: 90000,
+        cacheCreationInputTokens: 5000,
+        cacheReadInputTokens: 8000,
+        totalTokens: 163000,
+      },
+      cost: {
+        inputCost: 0.18,
+        outputCost: 1.35,
+        cacheCreationCost: 0,
+        cacheReadCost: 0,
+        totalCost: 1.53,
+      },
+      requestCount: 28,
+      percentage: 18.8,
+      color: '#F59E0B',
+    },
+    {
+      model: 'claude-3.5-haiku' as ModelId,
+      modelDisplayName: 'Claude 3.5 Haiku',
+      tokens: {
+        inputTokens: 25000,
+        outputTokens: 35000,
+        cacheCreationInputTokens: 2000,
+        cacheReadInputTokens: 3000,
+        totalTokens: 65000,
+      },
+      cost: {
+        inputCost: 0.02,
+        outputCost: 0.14,
+        cacheCreationCost: 0,
+        cacheReadCost: 0,
+        totalCost: 0.16,
+      },
+      requestCount: 15,
+      percentage: 7.5,
+      color: '#EC4899',
+    },
+  ];
+
+  // Generate recent sessions
+  const recentSessions: Session[] = Array.from({ length: 5 }, (_, i) => {
+    const sessionStart = new Date(now.getTime() - (i + 1) * 6 * 60 * 60 * 1000);
+    const sessionEnd = new Date(sessionStart.getTime() + 5 * 60 * 60 * 1000);
+    return {
+      id: `session-${i + 1}`,
+      startTime: sessionStart.toISOString(),
+      endTime: i === 0 ? undefined : sessionEnd.toISOString(),
+      status: i === 0 ? 'active' : 'expired',
+      totalTokens: Math.floor(Math.random() * 150000) + 50000,
+      totalCost: Math.random() * 5 + 1,
+      requestCount: Math.floor(Math.random() * 50) + 20,
+      lastActivityTime: i === 0 ? now.toISOString() : sessionEnd.toISOString(),
+    };
+  });
+
   return {
     currentSession: {
       id: 'mock-session',
@@ -507,10 +664,10 @@ export function generateMockDashboardData(): DashboardData {
       averageTokensPerRequest: 2822,
       averageCostPerRequest: 0.055,
     },
-    usageByHour: [],
-    usageByDay: [],
-    usageByModel: [],
-    recentSessions: [],
+    usageByHour,
+    usageByDay,
+    usageByModel,
+    recentSessions,
     planUsage: {
       plan: 'max_20x',
       tokensUsed: 125000,
@@ -518,6 +675,66 @@ export function generateMockDashboardData(): DashboardData {
       usagePercentage: 56.8,
       resetDate: new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString(),
       daysUntilReset: 0,
+    },
+  };
+}
+
+/**
+ * Generate mock PlanUsageResponse for demo mode
+ */
+export function generateMockPlanUsageResponse(): PlanUsageResponse {
+  const now = new Date();
+  const resetTime = new Date(now.getTime() + 3 * 60 * 60 * 1000); // 3 hours from now
+  const remainingMinutes = Math.floor((resetTime.getTime() - now.getTime()) / (1000 * 60));
+
+  return {
+    timestamp: now.toISOString(),
+    plan: {
+      plan: 'max20',
+      display_name: 'Max 20x',
+      token_limit: 220000,
+      cost_limit: 600,
+      message_limit: 1000,
+    },
+    cost_usage: {
+      current: 2.45,
+      limit: 600,
+      percentage: 0.41,
+      formatted_current: '$2.45',
+      formatted_limit: '$600.00',
+    },
+    token_usage: {
+      current: 125000,
+      limit: 220000,
+      percentage: 56.8,
+      formatted_current: '125K',
+      formatted_limit: '220K',
+    },
+    message_usage: {
+      current: 42,
+      limit: 1000,
+      percentage: 4.2,
+      formatted_current: '42',
+      formatted_limit: '1,000',
+    },
+    reset_info: {
+      reset_time: resetTime.toISOString(),
+      remaining_minutes: remainingMinutes,
+      remaining_formatted: `${Math.floor(remainingMinutes / 60)}h ${remainingMinutes % 60}m`,
+    },
+    burn_rate: {
+      tokens_per_minute: 520,
+      cost_per_hour: 0.82,
+    },
+    model_distribution: {
+      'claude-sonnet-4': 45.2,
+      'claude-opus-4': 28.5,
+      'claude-3.5-sonnet': 18.8,
+      'claude-3.5-haiku': 7.5,
+    },
+    predictions: {
+      tokens_run_out: new Date(now.getTime() + 4.5 * 60 * 60 * 1000).toISOString(),
+      limit_resets_at: resetTime.toISOString(),
     },
   };
 }
@@ -616,6 +833,7 @@ export const api = {
   },
   mock: {
     generateDashboardData: generateMockDashboardData,
+    generatePlanUsageResponse: generateMockPlanUsageResponse,
   },
 };
 

@@ -9,7 +9,18 @@
 </p>
 
 <p align="center">
+  <a href="https://claude-usage-dashboard.vercel.app">
+    <img src="https://img.shields.io/badge/Live%20Demo-Visit-blue?style=for-the-badge&logo=vercel" alt="Live Demo" />
+  </a>
+  &nbsp;
+  <a href="https://vercel.com/new/clone?repository-url=https://github.com/Genius-Cai/claude-usage-dashboard&env=NEXT_PUBLIC_USE_MOCK_DATA&envDescription=Set%20to%20true%20for%20demo%20mode&envLink=https://github.com/Genius-Cai/claude-usage-dashboard#demo-mode">
+    <img src="https://vercel.com/button" alt="Deploy with Vercel" />
+  </a>
+</p>
+
+<p align="center">
   <a href="#features">Features</a> |
+  <a href="#live-demo">Live Demo</a> |
   <a href="#quick-start">Quick Start</a> |
   <a href="#api-reference">API Reference</a> |
   <a href="#deployment">Deployment</a> |
@@ -44,6 +55,48 @@
 - **18+ Timezones** - Localized time display
 - **Notification Settings** - Usage warnings, session expiry alerts
 - **Display Preferences** - Compact mode, refresh intervals
+
+---
+
+## Live Demo
+
+**Try the dashboard instantly** - no backend required!
+
+**[View Live Demo](https://claude-usage-dashboard.vercel.app)**
+
+The demo runs entirely in your browser using mock data, showcasing all features:
+- Real-time usage tracking simulation
+- Interactive charts and visualizations
+- Session timer with countdown
+- Dark/Light theme toggle
+- Plan usage statistics
+
+---
+
+## Demo Mode
+
+You can run the dashboard in demo mode without a backend:
+
+```bash
+# Using environment variable
+NEXT_PUBLIC_USE_MOCK_DATA=true npm run dev
+```
+
+Or set in `.env.local`:
+```env
+NEXT_PUBLIC_USE_MOCK_DATA=true
+```
+
+### One-Click Deploy
+
+Deploy your own demo instance to Vercel:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Genius-Cai/claude-usage-dashboard&env=NEXT_PUBLIC_USE_MOCK_DATA&envDescription=Set%20to%20true%20for%20demo%20mode&envLink=https://github.com/Genius-Cai/claude-usage-dashboard#demo-mode)
+
+**Environment Variables for Demo:**
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `NEXT_PUBLIC_USE_MOCK_DATA` | `true` | Enable demo mode with mock data |
 
 ---
 
