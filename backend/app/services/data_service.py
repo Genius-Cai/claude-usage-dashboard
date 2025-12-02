@@ -722,3 +722,33 @@ def get_data_service() -> DataService:
         DataService: Singleton data service instance.
     """
     return DataService()
+
+
+def warm_cache(plan: str = "max20") -> None:
+    """Pre-warm the cache with commonly requested data.
+
+    This should be called at application startup to ensure
+    the first user request is fast.
+
+    Args:
+        plan: The plan type to warm cache for (default: max20)
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("Starting cache warm-up...")
+
+    try:
+        service = get_data_service()
+
+        # Warm the most expensive call - plan usage with analyze_usage()
+        logger.info(f"Warming plan usage cache for {plan}...")
+        service.get_plan_usage(plan)
+
+        # Warm today's usage data
+        logger.info("Warming today's usage data cache...")
+        service.get_realtime_usage()
+
+        logger.info("Cache warm-up completed successfully")
+    except Exception as e:
+        logger.warning(f"Cache warm-up failed (non-critical): {e}")

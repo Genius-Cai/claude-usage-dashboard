@@ -261,25 +261,21 @@ export default function Dashboard() {
 
               {/* Overview Tab - Loaded dynamically */}
               <TabsContent value="overview" className="space-y-6">
-                {activeTab === 'overview' && (
-                  <OverviewTab
-                    session={session ?? null}
-                    todayStats={todayStats}
-                    onRefresh={refresh}
-                  />
-                )}
+                <OverviewTab
+                  session={session ?? null}
+                  todayStats={todayStats}
+                  onRefresh={refresh}
+                />
               </TabsContent>
 
               {/* Analytics Tab - Loaded dynamically */}
               <TabsContent value="analytics" className="space-y-6">
-                {activeTab === 'analytics' && (
-                  <AnalyticsTab weekStats={weekStats} />
-                )}
+                <AnalyticsTab weekStats={weekStats} />
               </TabsContent>
 
               {/* Models Tab - Loaded dynamically */}
               <TabsContent value="models" className="space-y-6">
-                {activeTab === 'models' && <ModelsTab />}
+                <ModelsTab />
               </TabsContent>
             </Tabs>
           </motion.div>

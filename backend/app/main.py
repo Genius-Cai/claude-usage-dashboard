@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.models.schemas import HealthResponse
 from app.routers import stats, usage, websocket
 from app.routers.websocket import start_broadcast_task, stop_broadcast_task
+from app.services.data_service import warm_cache
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +45,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"Data path: {settings.CLAUDE_DATA_PATH}")
     logger.info(f"Data path valid: {settings.is_data_path_valid()}")
+
+    # Pre-warm the cache for faster first requests
+    if settings.is_data_path_valid():
+        warm_cache()
 
     # Start WebSocket broadcast task
     start_broadcast_task()
