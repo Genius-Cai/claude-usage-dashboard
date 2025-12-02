@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from claude_monitor.core.models import CostMode, UsageEntry
 from claude_monitor.core.plans import Plans, PlanType, PLAN_LIMITS
 from claude_monitor.data.reader import load_usage_entries
+from claude_monitor.data.analysis import analyze_usage
 
 from app.core.config import Settings, get_settings
 from app.models.schemas import (
@@ -491,7 +492,8 @@ class DataService:
     def get_plan_usage(self, plan: str = "max20") -> PlanUsageResponse:
         """Get real-time usage compared to plan limits.
 
-        This matches the claude-monitor CLI output format.
+        Uses analyze_usage from claude_monitor to get proper session blocks
+        that match the CLI output format.
 
         Args:
             plan: Plan type (pro, max5, max20, custom)
@@ -500,9 +502,6 @@ class DataService:
             PlanUsageResponse with usage vs limits
         """
         now = datetime.now(tz.utc)
-
-        # Load entries for the session window (5 hours)
-        entries = self._load_entries(hours_back=self.session_window_hours + 1)
 
         # Get plan configuration
         plan_config = Plans.get_plan_by_name(plan)
@@ -517,22 +516,61 @@ class DataService:
             message_limit=plan_config.message_limit,
         )
 
-        # Calculate session window
-        window_start = now - timedelta(hours=self.session_window_hours)
-        window_entries = [e for e in entries if e.timestamp >= window_start]
+        # Use analyze_usage to get proper session blocks (matches CLI)
+        try:
+            analysis_data = analyze_usage(
+                hours_back=self.session_window_hours * 2,  # Look back 2 windows
+                quick_start=False,
+                use_cache=False,
+                data_path=self.settings.CLAUDE_DATA_PATH,
+            )
+        except Exception as e:
+            logger.error(f"Failed to analyze usage: {e}")
+            analysis_data = None
 
-        # Calculate current usage in window
-        total_cost = sum(e.cost_usd for e in window_entries)
-        total_tokens = sum(
-            e.input_tokens + e.output_tokens
-            for e in window_entries
-        )
-        total_messages = len(window_entries)
+        # Find active session block
+        active_block = None
+        if analysis_data and "blocks" in analysis_data:
+            for block in analysis_data["blocks"]:
+                if block.get("isActive", False):
+                    active_block = block
+                    break
 
-        # Calculate percentages
-        cost_pct = min(100.0, (total_cost / plan_config.cost_limit * 100) if plan_config.cost_limit > 0 else 0)
-        token_pct = min(100.0, (total_tokens / plan_config.token_limit * 100) if plan_config.token_limit > 0 else 0)
-        msg_pct = min(100.0, (total_messages / plan_config.message_limit * 100) if plan_config.message_limit > 0 else 0)
+        # Extract session data from active block
+        if active_block:
+            total_cost = active_block.get("costUSD", 0.0)
+            total_tokens = active_block.get("totalTokens", 0)
+            total_messages = active_block.get("messageCount", 0)
+
+            # Parse session times
+            try:
+                start_time_str = active_block.get("startTime", "")
+                end_time_str = active_block.get("endTime", "")
+
+                if start_time_str:
+                    session_start = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                else:
+                    session_start = now
+
+                if end_time_str:
+                    reset_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+                else:
+                    reset_time = session_start + timedelta(hours=self.session_window_hours)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse session times: {e}")
+                session_start = now
+                reset_time = now + timedelta(hours=self.session_window_hours)
+        else:
+            # Fallback: no active session
+            total_cost = 0.0
+            total_tokens = 0
+            total_messages = 0
+            reset_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+        # Calculate percentages (don't cap at 100% to show overage)
+        cost_pct = (total_cost / plan_config.cost_limit * 100) if plan_config.cost_limit > 0 else 0
+        token_pct = (total_tokens / plan_config.token_limit * 100) if plan_config.token_limit > 0 else 0
+        msg_pct = (total_messages / plan_config.message_limit * 100) if plan_config.message_limit > 0 else 0
 
         # Format values
         cost_usage = UsageVsLimit(
@@ -559,14 +597,7 @@ class DataService:
             formatted_limit=str(plan_config.message_limit),
         )
 
-        # Calculate reset time (5 hours from first entry in window, or next hour boundary)
-        if window_entries:
-            first_entry = min(window_entries, key=lambda e: e.timestamp)
-            reset_time = first_entry.timestamp + timedelta(hours=self.session_window_hours)
-        else:
-            # No activity - reset at next hour boundary
-            reset_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-
+        # Calculate remaining time
         remaining = max(timedelta(0), reset_time - now)
         remaining_minutes = remaining.total_seconds() / 60
         hours = int(remaining_minutes // 60)
@@ -579,20 +610,27 @@ class DataService:
             remaining_formatted=remaining_formatted,
         )
 
-        # Calculate burn rate
+        # Calculate burn rate from recent entries
+        entries = self._load_entries(hours_back=1)
         burn_rate = self._calculate_burn_rate(entries)
 
-        # Model distribution
-        model_tokens: Dict[str, int] = defaultdict(int)
-        for entry in window_entries:
-            model = entry.model or "unknown"
-            model_tokens[model] += entry.input_tokens + entry.output_tokens
+        # Model distribution from active block
+        model_distribution: Dict[str, float] = {}
+        if active_block and "modelDistribution" in active_block:
+            model_distribution = active_block["modelDistribution"]
+        elif active_block and analysis_data:
+            # Calculate from entries if not in block
+            entries = self._load_entries(hours_back=self.session_window_hours)
+            model_tokens: Dict[str, int] = defaultdict(int)
+            for entry in entries:
+                model = entry.model or "unknown"
+                model_tokens[model] += entry.input_tokens + entry.output_tokens
 
-        total_model_tokens = sum(model_tokens.values())
-        model_distribution = {
-            model: round((tokens / total_model_tokens * 100), 1) if total_model_tokens > 0 else 0.0
-            for model, tokens in sorted(model_tokens.items(), key=lambda x: x[1], reverse=True)
-        }
+            total_model_tokens = sum(model_tokens.values())
+            model_distribution = {
+                model: round((tokens / total_model_tokens * 100), 1) if total_model_tokens > 0 else 0.0
+                for model, tokens in sorted(model_tokens.items(), key=lambda x: x[1], reverse=True)
+            }
 
         # Predictions
         predictions: Dict[str, Optional[str]] = {

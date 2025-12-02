@@ -337,7 +337,7 @@ export default function Dashboard() {
                           </span>
                         </div>
                         <Badge variant="secondary">
-                          {model.percentage.toFixed(0)}%
+                          {(model.percentage ?? 0).toFixed(0)}%
                         </Badge>
                       </div>
 
@@ -345,7 +345,7 @@ export default function Dashboard() {
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{
-                            width: `${model.percentage}%`,
+                            width: `${model.percentage ?? 0}%`,
                             backgroundColor: model.color,
                           }}
                         />
@@ -355,25 +355,25 @@ export default function Dashboard() {
                         <div>
                           <span className="text-muted-foreground">Tokens</span>
                           <p className="font-medium">
-                            {(model.tokens.totalTokens / 1000).toFixed(1)}K
+                            {((model.tokens?.totalTokens ?? 0) / 1000).toFixed(1)}K
                           </p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Cost</span>
                           <p className="font-medium">
-                            {formatCurrency(model.cost.totalCost)}
+                            {formatCurrency(model.cost?.totalCost ?? 0)}
                           </p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Input</span>
                           <p className="font-medium">
-                            {(model.tokens.inputTokens / 1000).toFixed(1)}K
+                            {((model.tokens?.inputTokens ?? 0) / 1000).toFixed(1)}K
                           </p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Output</span>
                           <p className="font-medium">
-                            {(model.tokens.outputTokens / 1000).toFixed(1)}K
+                            {((model.tokens?.outputTokens ?? 0) / 1000).toFixed(1)}K
                           </p>
                         </div>
                       </div>

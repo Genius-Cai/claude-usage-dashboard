@@ -1,21 +1,16 @@
 /**
  * API client for Claude Code Usage Dashboard
- * Provides functions for fetching and managing usage data
+ * Maps frontend requests to backend API endpoints
  */
 
 import type {
-  ApiResponse,
   DashboardData,
-  UsageRecord,
-  Session,
   UsageStats,
   UsageByPeriod,
   UsageByModel,
-  UsageFilter,
-  PaginationOptions,
-  PaginatedResponse,
-  PlanUsage,
+  Session,
   CurrentSession,
+  PlanUsage,
   PlanUsageResponse,
 } from '@/types';
 
@@ -24,15 +19,12 @@ import type {
 // ============================================================================
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-const API_TIMEOUT = 30000; // 30 seconds
+const API_TIMEOUT = 30000;
 
 // ============================================================================
 // Error Handling
 // ============================================================================
 
-/**
- * Custom API error class
- */
 export class ApiError extends Error {
   constructor(
     public statusCode: number,
@@ -45,9 +37,6 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Handle API response and extract data
- */
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -58,42 +47,18 @@ async function handleResponse<T>(response: Response): Promise<T> {
       errorData.details
     );
   }
-
-  const data = await response.json();
-
-  // Handle standard API response format
-  if ('success' in data) {
-    if (!data.success) {
-      throw new ApiError(
-        response.status,
-        data.error?.code || 'API_ERROR',
-        data.error?.message || 'API request failed',
-        data.error?.details
-      );
-    }
-    return data.data as T;
-  }
-
-  return data as T;
+  return response.json();
 }
-
-// ============================================================================
-// HTTP Client
-// ============================================================================
 
 interface RequestOptions extends RequestInit {
   timeout?: number;
 }
 
-/**
- * Make an API request with timeout support
- */
 async function apiRequest<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
   const { timeout = API_TIMEOUT, ...fetchOptions } = options;
-
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -106,207 +71,346 @@ async function apiRequest<T>(
         ...fetchOptions.headers,
       },
     });
-
     clearTimeout(timeoutId);
     return handleResponse<T>(response);
   } catch (error) {
     clearTimeout(timeoutId);
-
-    if (error instanceof ApiError) {
-      throw error;
-    }
-
+    if (error instanceof ApiError) throw error;
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
         throw new ApiError(408, 'TIMEOUT', 'Request timed out');
       }
       throw new ApiError(0, 'NETWORK_ERROR', error.message);
     }
-
     throw new ApiError(0, 'UNKNOWN_ERROR', 'An unknown error occurred');
   }
 }
 
 // ============================================================================
-// Dashboard API
+// Backend Response Types (matching actual backend schema)
+// ============================================================================
+
+interface BackendSession {
+  session_start: string;
+  session_end: string;
+  remaining_minutes: number;
+  remaining_formatted: string;
+  is_active: boolean;
+  tokens_in_window: number;
+  cost_in_window: number;
+}
+
+interface BackendTokens {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+  total_tokens: number;
+}
+
+interface BackendTodayStats {
+  date: string;
+  total_requests: number;
+  tokens: BackendTokens;
+  total_cost_usd: number;
+  models_used: string[];
+  hourly_distribution: Record<string, number>;
+}
+
+interface BackendBurnRate {
+  tokens_per_minute: number;
+  cost_per_hour: number;
+}
+
+interface BackendRealtimeResponse {
+  timestamp: string;
+  session: BackendSession;
+  today_stats: BackendTodayStats;
+  burn_rate: BackendBurnRate;
+  recent_entries: Array<{
+    timestamp: string;
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_tokens: number;
+    cache_read_tokens: number;
+    cost_usd: number;
+    model: string;
+  }>;
+}
+
+interface BackendHistoryDay {
+  date: string;
+  total_requests: number;
+  tokens: BackendTokens;
+  total_cost_usd: number;
+  models_used: string[];
+}
+
+interface BackendHistoryResponse {
+  start_date: string;
+  end_date: string;
+  days: number;
+  daily_stats: BackendHistoryDay[];
+  total_tokens: number;
+  total_cost: number;
+  total_requests: number;
+}
+
+interface BackendModelStats {
+  model: string;
+  total_requests: number;
+  tokens: BackendTokens;
+  total_cost_usd: number;
+  percentage_of_total: number;
+}
+
+interface BackendModelStatsResponse {
+  models: BackendModelStats[];
+}
+
+// ============================================================================
+// Data Transformation Functions
+// ============================================================================
+
+function transformToUsageStats(stats: BackendTodayStats): UsageStats {
+  return {
+    totalTokens: stats.tokens.total_tokens,
+    totalCost: stats.total_cost_usd,
+    inputTokens: stats.tokens.input_tokens,
+    outputTokens: stats.tokens.output_tokens,
+    cacheTokens: stats.tokens.cache_creation_tokens + stats.tokens.cache_read_tokens,
+    requestCount: stats.total_requests,
+    averageTokensPerRequest: stats.total_requests > 0
+      ? Math.round(stats.tokens.total_tokens / stats.total_requests)
+      : 0,
+    averageCostPerRequest: stats.total_requests > 0
+      ? stats.total_cost_usd / stats.total_requests
+      : 0,
+  };
+}
+
+function transformToCurrentSession(session: BackendSession, tokens: BackendTokens, cost: number): CurrentSession {
+  return {
+    id: 'current-session',
+    startTime: session.session_start,
+    status: session.is_active ? 'active' : 'expired',
+    totalTokens: session.tokens_in_window,
+    totalCost: session.cost_in_window,
+    requestCount: 0, // Not available from backend
+    lastActivityTime: new Date().toISOString(),
+    remainingTime: session.remaining_minutes * 60, // Convert to seconds
+    usagePercentage: 0, // Calculated elsewhere
+    isNearLimit: session.remaining_minutes < 30,
+  };
+}
+
+function transformHourlyToUsageByPeriod(hourlyDist: Record<string, number>): UsageByPeriod[] {
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+  return hours.map(hour => {
+    const count = hourlyDist[String(hour)] || 0;
+    return {
+      period: `${String(hour).padStart(2, '0')}:00`,
+      tokens: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalTokens: count * 1000, // Estimate
+      },
+      cost: {
+        inputCost: 0,
+        outputCost: 0,
+        cacheCreationCost: 0,
+        cacheReadCost: 0,
+        totalCost: count * 0.2, // Estimate
+      },
+      requestCount: count,
+    };
+  });
+}
+
+function transformDailyToUsageByPeriod(days: BackendHistoryDay[]): UsageByPeriod[] {
+  return days.map(day => ({
+    period: day.date,
+    tokens: {
+      inputTokens: day.tokens.input_tokens,
+      outputTokens: day.tokens.output_tokens,
+      cacheCreationInputTokens: day.tokens.cache_creation_tokens,
+      cacheReadInputTokens: day.tokens.cache_read_tokens,
+      totalTokens: day.tokens.total_tokens,
+    },
+    cost: {
+      inputCost: 0,
+      outputCost: 0,
+      cacheCreationCost: 0,
+      cacheReadCost: 0,
+      totalCost: day.total_cost_usd,
+    },
+    requestCount: day.total_requests,
+  }));
+}
+
+function transformToUsageByModel(models: BackendModelStats[]): UsageByModel[] {
+  const colors = ['#3B82F6', '#6366F1', '#EC4899', '#10B981', '#F59E0B'];
+  return models.map((model, index) => ({
+    model: model.model as any,
+    modelDisplayName: model.model.replace('claude-', '').replace(/-\d+$/, ''),
+    tokens: {
+      inputTokens: model.tokens?.input_tokens || 0,
+      outputTokens: model.tokens?.output_tokens || 0,
+      cacheCreationInputTokens: model.tokens?.cache_creation_tokens || 0,
+      cacheReadInputTokens: model.tokens?.cache_read_tokens || 0,
+      totalTokens: model.tokens?.total_tokens || 0,
+    },
+    cost: {
+      inputCost: 0,
+      outputCost: 0,
+      cacheCreationCost: 0,
+      cacheReadCost: 0,
+      totalCost: model.total_cost_usd || 0,
+    },
+    requestCount: model.total_requests || 0,
+    percentage: model.percentage_of_total || 0,
+    color: colors[index % colors.length],
+  }));
+}
+
+// ============================================================================
+// API Functions
 // ============================================================================
 
 /**
- * Fetch main dashboard data
+ * Fetch main dashboard data from backend /usage/realtime
  */
 export async function fetchDashboardData(): Promise<DashboardData> {
-  return apiRequest<DashboardData>('/dashboard');
+  const [realtime, history, modelStats] = await Promise.all([
+    apiRequest<BackendRealtimeResponse>('/usage/realtime'),
+    apiRequest<BackendHistoryResponse>('/usage/history?days=7').catch(() => null),
+    apiRequest<BackendModelStatsResponse>('/stats/models').catch(() => null),
+  ]);
+
+  const todayStats = transformToUsageStats(realtime.today_stats);
+
+  return {
+    currentSession: transformToCurrentSession(
+      realtime.session,
+      realtime.today_stats.tokens,
+      realtime.today_stats.total_cost_usd
+    ),
+    todayStats,
+    weekStats: todayStats, // Use today for now
+    monthStats: todayStats, // Use today for now
+    usageByHour: transformHourlyToUsageByPeriod(realtime.today_stats.hourly_distribution),
+    usageByDay: history ? transformDailyToUsageByPeriod(history.daily_stats) : [],
+    usageByModel: modelStats ? transformToUsageByModel(modelStats.models) : [],
+    recentSessions: [],
+    planUsage: {
+      plan: 'max_20x',
+      tokensUsed: realtime.session.tokens_in_window,
+      tokenLimit: 220000,
+      usagePercentage: (realtime.session.tokens_in_window / 220000) * 100,
+      resetDate: realtime.session.session_end,
+      daysUntilReset: 0,
+    },
+  };
 }
 
 /**
- * Fetch current session information
+ * Fetch current session from backend /usage/realtime
  */
 export async function fetchCurrentSession(): Promise<CurrentSession | null> {
-  return apiRequest<CurrentSession | null>('/session/current');
+  const realtime = await apiRequest<BackendRealtimeResponse>('/usage/realtime');
+  return transformToCurrentSession(
+    realtime.session,
+    realtime.today_stats.tokens,
+    realtime.today_stats.total_cost_usd
+  );
 }
 
 /**
- * Fetch plan usage information
+ * Fetch plan usage from backend /usage/plan-usage
  */
 export async function fetchPlanUsage(): Promise<PlanUsage> {
-  return apiRequest<PlanUsage>('/plan/usage');
+  const planUsage = await apiRequest<PlanUsageResponse>('/usage/plan-usage?plan=max20');
+  return {
+    plan: 'max_20x',
+    tokensUsed: planUsage.token_usage.current,
+    tokenLimit: planUsage.token_usage.limit,
+    usagePercentage: planUsage.token_usage.percentage,
+    resetDate: planUsage.reset_info.reset_time,
+    daysUntilReset: 0,
+  };
 }
 
 /**
- * Fetch real-time plan usage vs limits (matching claude-monitor CLI)
- * @param plan - Plan type (pro, max5, max20, custom). Defaults to max20.
+ * Fetch real-time plan usage vs limits
  */
 export async function fetchPlanUsageRealtime(plan: string = 'max20'): Promise<PlanUsageResponse> {
   return apiRequest<PlanUsageResponse>(`/usage/plan-usage?plan=${plan}`);
 }
 
-// ============================================================================
-// Usage API
-// ============================================================================
-
 /**
- * Fetch usage statistics for a time period
+ * Fetch usage statistics
  */
 export async function fetchUsageStats(
   period: 'today' | 'week' | 'month' | 'year' = 'today'
 ): Promise<UsageStats> {
-  return apiRequest<UsageStats>(`/usage/stats?period=${period}`);
+  const realtime = await apiRequest<BackendRealtimeResponse>('/usage/realtime');
+  return transformToUsageStats(realtime.today_stats);
 }
 
 /**
- * Fetch usage records with filtering and pagination
- */
-export async function fetchUsageRecords(
-  filter?: UsageFilter,
-  pagination?: PaginationOptions
-): Promise<PaginatedResponse<UsageRecord>> {
-  const params = new URLSearchParams();
-
-  if (filter) {
-    if (filter.timeRange) params.set('timeRange', filter.timeRange);
-    if (filter.startDate) params.set('startDate', filter.startDate);
-    if (filter.endDate) params.set('endDate', filter.endDate);
-    if (filter.models?.length) params.set('models', filter.models.join(','));
-    if (filter.minCost !== undefined) params.set('minCost', String(filter.minCost));
-    if (filter.maxCost !== undefined) params.set('maxCost', String(filter.maxCost));
-  }
-
-  if (pagination) {
-    params.set('page', String(pagination.page));
-    params.set('pageSize', String(pagination.pageSize));
-    if (pagination.sortBy) params.set('sortBy', pagination.sortBy);
-    if (pagination.sortOrder) params.set('sortOrder', pagination.sortOrder);
-  }
-
-  const queryString = params.toString();
-  return apiRequest<PaginatedResponse<UsageRecord>>(
-    `/usage/records${queryString ? `?${queryString}` : ''}`
-  );
-}
-
-/**
- * Fetch usage data grouped by time period
+ * Fetch usage by period
  */
 export async function fetchUsageByPeriod(
   groupBy: 'hour' | 'day' | 'week' | 'month' = 'day',
   startDate?: string,
   endDate?: string
 ): Promise<UsageByPeriod[]> {
-  const params = new URLSearchParams({ groupBy });
-  if (startDate) params.set('startDate', startDate);
-  if (endDate) params.set('endDate', endDate);
+  if (groupBy === 'hour') {
+    const realtime = await apiRequest<BackendRealtimeResponse>('/usage/realtime');
+    return transformHourlyToUsageByPeriod(realtime.today_stats.hourly_distribution);
+  }
 
-  return apiRequest<UsageByPeriod[]>(`/usage/by-period?${params.toString()}`);
+  const days = groupBy === 'week' ? 7 : groupBy === 'month' ? 30 : 7;
+  const history = await apiRequest<BackendHistoryResponse>(`/usage/history?days=${days}`);
+  return transformDailyToUsageByPeriod(history.daily_stats);
 }
 
 /**
- * Fetch usage data grouped by model
+ * Fetch usage by model
  */
 export async function fetchUsageByModel(
   startDate?: string,
   endDate?: string
 ): Promise<UsageByModel[]> {
-  const params = new URLSearchParams();
-  if (startDate) params.set('startDate', startDate);
-  if (endDate) params.set('endDate', endDate);
-
-  const queryString = params.toString();
-  return apiRequest<UsageByModel[]>(
-    `/usage/by-model${queryString ? `?${queryString}` : ''}`
-  );
-}
-
-// ============================================================================
-// Session API
-// ============================================================================
-
-/**
- * Fetch all sessions with pagination
- */
-export async function fetchSessions(
-  pagination?: PaginationOptions
-): Promise<PaginatedResponse<Session>> {
-  const params = new URLSearchParams();
-
-  if (pagination) {
-    params.set('page', String(pagination.page));
-    params.set('pageSize', String(pagination.pageSize));
-    if (pagination.sortBy) params.set('sortBy', pagination.sortBy);
-    if (pagination.sortOrder) params.set('sortOrder', pagination.sortOrder);
-  }
-
-  const queryString = params.toString();
-  return apiRequest<PaginatedResponse<Session>>(
-    `/sessions${queryString ? `?${queryString}` : ''}`
-  );
+  const modelStats = await apiRequest<BackendModelStatsResponse>('/stats/models');
+  return transformToUsageByModel(modelStats.models);
 }
 
 /**
- * Fetch recent sessions
- */
-export async function fetchRecentSessions(limit: number = 10): Promise<Session[]> {
-  return apiRequest<Session[]>(`/sessions/recent?limit=${limit}`);
-}
-
-/**
- * Fetch a specific session by ID
- */
-export async function fetchSession(sessionId: string): Promise<Session> {
-  return apiRequest<Session>(`/sessions/${sessionId}`);
-}
-
-// ============================================================================
-// Health Check
-// ============================================================================
-
-/**
- * Check API health status
+ * Health check
  */
 export async function checkApiHealth(): Promise<{ status: string; timestamp: string }> {
   return apiRequest<{ status: string; timestamp: string }>('/health');
 }
 
 // ============================================================================
-// Mock Data (for development)
+// Mock Data (fallback only)
 // ============================================================================
 
-/**
- * Generate mock dashboard data for development
- */
 export function generateMockDashboardData(): DashboardData {
   const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
   return {
     currentSession: {
-      id: 'session-1',
+      id: 'mock-session',
       startTime: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
       status: 'active',
       totalTokens: 125000,
       totalCost: 2.45,
       requestCount: 42,
       lastActivityTime: now.toISOString(),
-      remainingTime: 180 * 60, // 3 hours in seconds
+      remainingTime: 180 * 60,
       usagePercentage: 25,
       isNearLimit: false,
     },
@@ -340,141 +444,17 @@ export function generateMockDashboardData(): DashboardData {
       averageTokensPerRequest: 2822,
       averageCostPerRequest: 0.055,
     },
-    usageByHour: Array.from({ length: 24 }, (_, i) => ({
-      period: `${String(i).padStart(2, '0')}:00`,
-      tokens: {
-        inputTokens: Math.floor(Math.random() * 20000) + 5000,
-        outputTokens: Math.floor(Math.random() * 30000) + 10000,
-        cacheCreationInputTokens: Math.floor(Math.random() * 2000),
-        cacheReadInputTokens: Math.floor(Math.random() * 5000),
-        totalTokens: 0,
-      },
-      cost: {
-        inputCost: 0,
-        outputCost: 0,
-        cacheCreationCost: 0,
-        cacheReadCost: 0,
-        totalCost: Math.random() * 0.5 + 0.1,
-      },
-      requestCount: Math.floor(Math.random() * 10) + 2,
-    })),
-    usageByDay: Array.from({ length: 7 }, (_, i) => {
-      const date = new Date(startOfDay);
-      date.setDate(date.getDate() - (6 - i));
-      return {
-        period: date.toISOString().split('T')[0],
-        tokens: {
-          inputTokens: Math.floor(Math.random() * 200000) + 100000,
-          outputTokens: Math.floor(Math.random() * 300000) + 150000,
-          cacheCreationInputTokens: Math.floor(Math.random() * 20000),
-          cacheReadInputTokens: Math.floor(Math.random() * 50000),
-          totalTokens: 0,
-        },
-        cost: {
-          inputCost: 0,
-          outputCost: 0,
-          cacheCreationCost: 0,
-          cacheReadCost: 0,
-          totalCost: Math.random() * 10 + 5,
-        },
-        requestCount: Math.floor(Math.random() * 100) + 50,
-      };
-    }),
-    usageByModel: [
-      {
-        model: 'claude-sonnet-4',
-        modelDisplayName: 'Claude Sonnet 4',
-        tokens: {
-          inputTokens: 200000,
-          outputTokens: 300000,
-          cacheCreationInputTokens: 10000,
-          cacheReadInputTokens: 25000,
-          totalTokens: 535000,
-        },
-        cost: {
-          inputCost: 0.6,
-          outputCost: 4.5,
-          cacheCreationCost: 0.015,
-          cacheReadCost: 0.0125,
-          totalCost: 5.13,
-        },
-        requestCount: 85,
-        percentage: 45,
-        color: '#3B82F6',
-      },
-      {
-        model: 'claude-opus-4',
-        modelDisplayName: 'Claude Opus 4',
-        tokens: {
-          inputTokens: 100000,
-          outputTokens: 150000,
-          cacheCreationInputTokens: 5000,
-          cacheReadInputTokens: 10000,
-          totalTokens: 265000,
-        },
-        cost: {
-          inputCost: 1.5,
-          outputCost: 11.25,
-          cacheCreationCost: 0.075,
-          cacheReadCost: 0.05,
-          totalCost: 12.88,
-        },
-        requestCount: 42,
-        percentage: 35,
-        color: '#6366F1',
-      },
-      {
-        model: 'claude-3.5-haiku',
-        modelDisplayName: 'Claude 3.5 Haiku',
-        tokens: {
-          inputTokens: 80000,
-          outputTokens: 120000,
-          cacheCreationInputTokens: 4000,
-          cacheReadInputTokens: 15000,
-          totalTokens: 219000,
-        },
-        cost: {
-          inputCost: 0.064,
-          outputCost: 0.48,
-          cacheCreationCost: 0.003,
-          cacheReadCost: 0.006,
-          totalCost: 0.55,
-        },
-        requestCount: 29,
-        percentage: 20,
-        color: '#EC4899',
-      },
-    ],
-    recentSessions: [
-      {
-        id: 'session-1',
-        startTime: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
-        status: 'active',
-        totalTokens: 125000,
-        totalCost: 2.45,
-        requestCount: 42,
-        projectPath: '/Users/dev/project-a',
-        lastActivityTime: now.toISOString(),
-      },
-      {
-        id: 'session-2',
-        startTime: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
-        endTime: new Date(now.getTime() - 20 * 60 * 60 * 1000).toISOString(),
-        status: 'expired',
-        totalTokens: 350000,
-        totalCost: 6.80,
-        requestCount: 128,
-        projectPath: '/Users/dev/project-b',
-        lastActivityTime: new Date(now.getTime() - 20 * 60 * 60 * 1000).toISOString(),
-      },
-    ],
+    usageByHour: [],
+    usageByDay: [],
+    usageByModel: [],
+    recentSessions: [],
     planUsage: {
-      plan: 'pro',
-      tokensUsed: 8500000,
-      tokenLimit: 5000000,
-      usagePercentage: 170,
-      resetDate: new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString(),
-      daysUntilReset: 15,
+      plan: 'max_20x',
+      tokensUsed: 125000,
+      tokenLimit: 220000,
+      usagePercentage: 56.8,
+      resetDate: new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString(),
+      daysUntilReset: 0,
     },
   };
 }
@@ -492,15 +472,9 @@ export const api = {
   },
   usage: {
     fetchStats: fetchUsageStats,
-    fetchRecords: fetchUsageRecords,
     fetchByPeriod: fetchUsageByPeriod,
     fetchByModel: fetchUsageByModel,
     fetchPlanUsageRealtime,
-  },
-  sessions: {
-    fetch: fetchSessions,
-    fetchRecent: fetchRecentSessions,
-    fetchById: fetchSession,
   },
   health: {
     check: checkApiHealth,
