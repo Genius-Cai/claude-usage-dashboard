@@ -285,7 +285,7 @@ export function StatsCard({
 
   if (isLoading) {
     return (
-      <Card className={className}>
+      <Card className={cn('h-full', className)}>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <Skeleton className="h-4 w-20" />
           <Skeleton className="h-8 w-8 rounded-md" />
@@ -307,8 +307,9 @@ export function StatsCard({
         delay: index * 0.1,
         ease: [0.4, 0, 0.2, 1],
       }}
+      className="h-full"
     >
-      <Card className={cn('overflow-hidden', className)}>
+      <Card className={cn('overflow-hidden h-full', className)}>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
             {title}

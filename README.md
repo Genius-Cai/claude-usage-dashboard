@@ -1,7 +1,7 @@
 # Claude Usage Dashboard
 
 <p align="center">
-  <img src="public/icons/logo.svg" alt="Claude Usage Dashboard" width="100" />
+  <img src="public/icons/logo.png" alt="Claude Usage Dashboard" height="60" />
 </p>
 
 <p align="center">
