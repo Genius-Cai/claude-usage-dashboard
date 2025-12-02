@@ -1,18 +1,23 @@
 'use client';
 
 /**
- * Session Timer Component
- * Displays countdown timer for current session with visual indicators
- * Uses plan-usage API for accurate session data from analyze_usage()
+ * Session Timer Component - Enhanced Version
+ * Features:
+ * - Stagger entrance animations
+ * - Count-up animations for timer and stats
+ * - Semantic colored status badges (sky/cyan active, amber idle, violet expired)
+ * - Animated progress bar with fill effect and glow
+ * - Scale animation for timer when critical
+ * - Pulse animation in critical state
+ * - Visual hierarchy with timer most prominent
  */
 
 import * as React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, AlertCircle, Pause, Play, RefreshCw } from 'lucide-react';
+import { motion, AnimatePresence, useInView } from 'framer-motion';
+import { Clock, AlertCircle, Pause, Play, RefreshCw, MessageSquare, Zap, DollarSign } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePlanUsageRealtime } from '@/hooks';
 import type { CurrentSession, SessionStatus } from '@/types';
@@ -26,6 +31,47 @@ interface SessionTimerProps {
   className?: string;
   /** Plan to fetch usage data for (default: 'max20') */
   plan?: string;
+}
+
+/**
+ * Semantic icon colors for different metrics
+ */
+const ICON_COLORS = {
+  message: 'text-blue-500 dark:text-blue-400',
+  token: 'text-amber-500 dark:text-amber-400',
+  cost: 'text-emerald-500 dark:text-emerald-400',
+  time: 'text-purple-500 dark:text-purple-400',
+} as const;
+
+/**
+ * Get status colors based on percentage for progress bar
+ */
+function getProgressColors(percentage: number): {
+  bar: string;
+  glow: string;
+} {
+  if (percentage >= 100) {
+    return {
+      bar: 'bg-gradient-to-r from-violet-500 to-fuchsia-500',
+      glow: 'shadow-lg shadow-violet-500/30',
+    };
+  }
+  if (percentage >= 80) {
+    return {
+      bar: 'bg-gradient-to-r from-rose-500 to-pink-500',
+      glow: 'shadow-lg shadow-rose-500/30',
+    };
+  }
+  if (percentage >= 50) {
+    return {
+      bar: 'bg-gradient-to-r from-amber-500 to-orange-500',
+      glow: 'shadow-lg shadow-amber-500/30',
+    };
+  }
+  return {
+    bar: 'bg-gradient-to-r from-sky-500 to-cyan-500',
+    glow: 'shadow-lg shadow-sky-500/30',
+  };
 }
 
 /**
@@ -46,7 +92,8 @@ function formatTime(seconds: number): string {
 }
 
 /**
- * Get status badge config
+ * Get status badge config with semantic colors
+ * Active: sky/cyan, Idle: amber, Expired: violet
  */
 function getStatusConfig(status: SessionStatus) {
   switch (status) {
@@ -54,28 +101,32 @@ function getStatusConfig(status: SessionStatus) {
       return {
         label: 'Active',
         variant: 'default' as const,
-        className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+        className: 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950/30 dark:text-sky-400 dark:border-sky-800',
+        iconColor: 'text-sky-500 dark:text-sky-400',
         icon: Play,
       };
     case 'idle':
       return {
         label: 'Idle',
         variant: 'secondary' as const,
-        className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+        className: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800',
+        iconColor: 'text-amber-500 dark:text-amber-400',
         icon: Pause,
       };
     case 'expired':
       return {
         label: 'Expired',
         variant: 'destructive' as const,
-        className: '',
+        className: 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-800',
+        iconColor: 'text-violet-500 dark:text-violet-400',
         icon: AlertCircle,
       };
     case 'paused':
       return {
         label: 'Paused',
         variant: 'outline' as const,
-        className: '',
+        className: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-950/30 dark:text-slate-400 dark:border-slate-800',
+        iconColor: 'text-slate-500 dark:text-slate-400',
         icon: Pause,
       };
     default:
@@ -83,9 +134,171 @@ function getStatusConfig(status: SessionStatus) {
         label: status,
         variant: 'secondary' as const,
         className: '',
+        iconColor: 'text-muted-foreground',
         icon: Clock,
       };
   }
+}
+
+/**
+ * Animated progress bar with fill effect and glow
+ */
+function AnimatedProgressBar({
+  percentage,
+  isCritical,
+  isWarning,
+  delay = 0,
+}: {
+  percentage: number;
+  isCritical: boolean;
+  isWarning: boolean;
+  delay?: number;
+}) {
+  const displayPercentage = Math.min(percentage, 100);
+
+  // Determine colors based on warning/critical state or percentage
+  let barColors: { bar: string; glow: string };
+  if (isCritical) {
+    barColors = {
+      bar: 'bg-gradient-to-r from-rose-500 to-pink-500',
+      glow: 'shadow-lg shadow-rose-500/30',
+    };
+  } else if (isWarning) {
+    barColors = {
+      bar: 'bg-gradient-to-r from-amber-500 to-orange-500',
+      glow: 'shadow-lg shadow-amber-500/30',
+    };
+  } else {
+    barColors = getProgressColors(percentage);
+  }
+
+  return (
+    <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-secondary/50">
+      <motion.div
+        className={cn(
+          'h-full rounded-full',
+          barColors.bar,
+          barColors.glow,
+          isCritical && 'animate-pulse'
+        )}
+        initial={{ width: 0 }}
+        animate={{ width: `${displayPercentage}%` }}
+        transition={{
+          duration: 0.8,
+          delay,
+          ease: [0.4, 0, 0.2, 1],
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * Animated number with count-up effect
+ */
+function AnimatedValue({
+  value,
+  decimals = 0,
+  prefix = '',
+  suffix = '',
+  className,
+}: {
+  value: number;
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
+  className?: string;
+}) {
+  const [displayValue, setDisplayValue] = React.useState(0);
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const isInView = useInView(ref, { once: true });
+
+  React.useEffect(() => {
+    if (!isInView) return;
+
+    const startTime = Date.now();
+    const duration = 800;
+    const startValue = 0;
+    const endValue = value;
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
+      const currentValue = startValue + (endValue - startValue) * easeProgress;
+      setDisplayValue(currentValue);
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    };
+
+    requestAnimationFrame(animate);
+  }, [value, isInView]);
+
+  return (
+    <span ref={ref} className={cn('tabular-nums', className)}>
+      {prefix}
+      {displayValue.toFixed(decimals)}
+      {suffix}
+    </span>
+  );
+}
+
+/**
+ * Stat item with icon and animated value
+ */
+function StatItem({
+  icon: Icon,
+  iconColor,
+  label,
+  value,
+  prefix = '',
+  suffix = '',
+  decimals = 0,
+  index = 0,
+}: {
+  icon: React.ElementType;
+  iconColor: string;
+  label: string;
+  value: number | string;
+  prefix?: string;
+  suffix?: string;
+  decimals?: number;
+  index?: number;
+}) {
+  const isNumeric = typeof value === 'number';
+
+  return (
+    <motion.div
+      className="text-center"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{
+        duration: 0.4,
+        delay: 0.4 + index * 0.1,
+        ease: [0.4, 0, 0.2, 1],
+      }}
+    >
+      <div className="flex items-center justify-center gap-1 mb-1">
+        <Icon className={cn('h-3.5 w-3.5', iconColor)} />
+      </div>
+      <div className="text-lg font-semibold font-mono">
+        {isNumeric ? (
+          <AnimatedValue
+            value={value}
+            decimals={decimals}
+            prefix={prefix}
+            suffix={suffix}
+          />
+        ) : (
+          <span>{prefix}{value}{suffix}</span>
+        )}
+      </div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+    </motion.div>
+  );
 }
 
 /**
@@ -178,8 +391,21 @@ export function SessionTimer({
           )}
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center py-8">
-          <Clock className="h-12 w-12 text-muted-foreground/50 mb-4" />
-          <p className="text-sm text-muted-foreground">No active session</p>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Clock className="h-12 w-12 text-muted-foreground/50 mb-4" />
+          </motion.div>
+          <motion.p
+            className="text-sm text-muted-foreground"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
+          >
+            No active session
+          </motion.p>
         </CardContent>
       </Card>
     );
@@ -193,83 +419,126 @@ export function SessionTimer({
   // Extract session stats from plan usage data
   const sessionCost = data.cost_usage?.current ?? 0;
   const sessionMessages = data.message_usage?.current ?? 0;
+  const sessionTokens = data.token_usage?.formatted_current ?? '0';
 
   return (
     <Card
       className={cn(
-        'overflow-hidden transition-all',
-        isCritical && 'border-red-500 dark:border-red-400',
-        isWarning && !isCritical && 'border-yellow-500 dark:border-yellow-400',
+        'overflow-hidden transition-all duration-300',
+        isCritical && 'border-rose-500 dark:border-rose-400 shadow-lg shadow-rose-500/10',
+        isWarning && !isCritical && 'border-amber-500 dark:border-amber-400 shadow-lg shadow-amber-500/10',
         className
       )}
     >
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          Session Timer
-        </CardTitle>
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            Session Timer
+          </CardTitle>
+        </motion.div>
         <div className="flex items-center gap-2">
-          <Badge
-            variant={statusConfig.variant}
-            className={cn('gap-1', statusConfig.className)}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, delay: 0.1 }}
           >
-            <StatusIcon className="h-3 w-3" />
-            {statusConfig.label}
-          </Badge>
+            <Badge
+              variant={statusConfig.variant}
+              className={cn('gap-1 border', statusConfig.className)}
+            >
+              <StatusIcon className={cn('h-3 w-3', statusConfig.iconColor)} />
+              {statusConfig.label}
+            </Badge>
+          </motion.div>
           {handleRefresh && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <motion.div
+              initial={{ opacity: 0, rotate: -90 }}
+              animate={{ opacity: 1, rotate: 0 }}
+              transition={{ duration: 0.3, delay: 0.15 }}
+            >
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRefresh}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </motion.div>
           )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Timer Display */}
+        {/* Timer Display - Most prominent with scale animation when critical */}
         <AnimatePresence mode="wait">
           <motion.div
             key={Math.floor(remainingTime / 60)}
-            initial={{ opacity: 0.8 }}
-            animate={{ opacity: 1 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{
+              opacity: 1,
+              scale: isCritical ? [1, 1.02, 1] : 1,
+            }}
+            transition={{
+              opacity: { duration: 0.3 },
+              scale: isCritical
+                ? { duration: 1, repeat: Infinity, ease: 'easeInOut' }
+                : { duration: 0.3 },
+            }}
             className={cn(
-              'text-4xl font-mono font-bold tracking-wider',
-              isCritical && 'text-red-500 dark:text-red-400',
-              isWarning && !isCritical && 'text-yellow-500 dark:text-yellow-400'
+              'text-4xl font-mono font-bold tracking-wider text-center py-2',
+              isCritical && 'text-rose-600 dark:text-rose-400',
+              isWarning && !isCritical && 'text-amber-600 dark:text-amber-400',
+              !isWarning && !isCritical && 'text-foreground'
             )}
           >
             {formatTime(remainingTime)}
           </motion.div>
         </AnimatePresence>
 
-        {/* Progress Bar - shows cost usage percentage */}
-        <div className="space-y-2">
+        {/* Progress Bar - Animated fill with glow effect */}
+        <motion.div
+          className="space-y-2"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+        >
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>Session Usage</span>
-            <span>{progressPercentage.toFixed(1)}%</span>
+            <span className="font-mono">
+              <AnimatedValue value={progressPercentage} decimals={1} suffix="%" />
+            </span>
           </div>
-          <Progress
-            value={progressPercentage}
-            className={cn(
-              'h-2',
-              isCritical && '[&>div]:bg-red-500',
-              isWarning && !isCritical && '[&>div]:bg-yellow-500'
-            )}
+          <AnimatedProgressBar
+            percentage={progressPercentage}
+            isCritical={isCritical}
+            isWarning={isWarning}
+            delay={0.3}
           />
-        </div>
+        </motion.div>
 
-        {/* Warning Message */}
+        {/* Warning Message with AnimatePresence */}
         <AnimatePresence>
           {(isWarning || isCritical) && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
+              initial={{ opacity: 0, height: 0, y: -10 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -10 }}
+              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
               className={cn(
-                'flex items-center gap-2 rounded-md p-2 text-sm',
+                'flex items-center gap-2 rounded-lg p-3 text-sm border',
                 isCritical
-                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                  : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                  ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800'
+                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800'
               )}
             >
-              <AlertCircle className="h-4 w-4 shrink-0" />
+              <motion.div
+                animate={isCritical ? { scale: [1, 1.2, 1] } : {}}
+                transition={{ duration: 0.6, repeat: Infinity }}
+              >
+                <AlertCircle className={cn(
+                  'h-4 w-4 shrink-0',
+                  isCritical ? 'text-rose-500' : 'text-amber-500'
+                )} />
+              </motion.div>
               <span>
                 {isCritical
                   ? 'Session expiring soon! Consider wrapping up.'
@@ -279,26 +548,37 @@ export function SessionTimer({
           )}
         </AnimatePresence>
 
-        {/* Session Stats - using data from plan-usage API */}
-        <div className="grid grid-cols-3 gap-4 pt-2 border-t">
-          <div className="text-center">
-            <div className="text-lg font-semibold">
-              {sessionMessages}
-            </div>
-            <div className="text-xs text-muted-foreground">Messages</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-semibold">
-              {data.token_usage?.formatted_current ?? '0'}
-            </div>
-            <div className="text-xs text-muted-foreground">Tokens</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-semibold">
-              ${sessionCost.toFixed(2)}
-            </div>
-            <div className="text-xs text-muted-foreground">Cost</div>
-          </div>
+        {/* Session Stats with stagger animation and semantic icon colors */}
+        <motion.div
+          className="border-t border-border pt-4"
+          initial={{ opacity: 0, scaleX: 0 }}
+          animate={{ opacity: 1, scaleX: 1 }}
+          transition={{ duration: 0.4, delay: 0.35 }}
+        />
+        <div className="grid grid-cols-3 gap-4">
+          <StatItem
+            icon={MessageSquare}
+            iconColor={ICON_COLORS.message}
+            label="Messages"
+            value={sessionMessages}
+            index={0}
+          />
+          <StatItem
+            icon={Zap}
+            iconColor={ICON_COLORS.token}
+            label="Tokens"
+            value={sessionTokens}
+            index={1}
+          />
+          <StatItem
+            icon={DollarSign}
+            iconColor={ICON_COLORS.cost}
+            label="Cost"
+            value={sessionCost}
+            prefix="$"
+            decimals={2}
+            index={2}
+          />
         </div>
       </CardContent>
     </Card>
@@ -375,17 +655,24 @@ export function CompactSessionTimer({
   const isCritical = remainingTime > 0 && remainingTime <= 10 * 60;
 
   return (
-    <div
+    <motion.div
       className={cn(
         'flex items-center gap-2 font-mono text-sm',
-        isCritical && 'text-red-500 dark:text-red-400',
-        isWarning && !isCritical && 'text-yellow-500 dark:text-yellow-400',
+        isCritical && 'text-rose-600 dark:text-rose-400',
+        isWarning && !isCritical && 'text-amber-600 dark:text-amber-400',
         !isWarning && !isCritical && 'text-foreground',
         className
       )}
+      animate={isCritical ? { scale: [1, 1.05, 1] } : {}}
+      transition={{ duration: 1, repeat: Infinity }}
     >
-      <Clock className="h-4 w-4" />
+      <Clock className={cn(
+        'h-4 w-4',
+        isCritical && 'text-rose-500',
+        isWarning && !isCritical && 'text-amber-500',
+        !isWarning && !isCritical && ICON_COLORS.time
+      )} />
       <span>{formatTime(remainingTime)}</span>
-    </div>
+    </motion.div>
   );
 }

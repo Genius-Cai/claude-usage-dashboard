@@ -575,7 +575,7 @@ export default function SettingsPage() {
                 <span className="text-sm text-muted-foreground">
                   Last Updated
                 </span>
-                <span className="text-sm">December 2024</span>
+                <span className="text-sm">December 2025</span>
               </div>
 
               <Separator />

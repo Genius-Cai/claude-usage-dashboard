@@ -597,7 +597,7 @@ class DataService:
         if active_block:
             total_cost = active_block.get("costUSD", 0.0)
             total_tokens = active_block.get("totalTokens", 0)
-            total_messages = active_block.get("messageCount", 0)
+            total_messages = active_block.get("sentMessagesCount", 0)
 
             # Parse session times
             try:
